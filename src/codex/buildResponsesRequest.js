@@ -1,0 +1,194 @@
+import crypto from 'node:crypto';
+
+export const REDACTED_ACCOUNT_ID = '[REDACTED_ACCOUNT_ID]';
+export const REDACTED_SESSION_ID = '[REDACTED_SESSION_ID]';
+export const REDACTED_INSTALLATION_ID = '[REDACTED_INSTALLATION_ID]';
+export const REDACTED_IMAGE_DATA = '[REDACTED_IMAGE_DATA]';
+
+export const SUPPORTED_IMAGE_SIZES = new Set([
+  'auto',
+  '1024x1024',
+  '1536x1024',
+  '1024x1536',
+  '2048x2048',
+  '2048x1152',
+  '3840x2160',
+  '2160x3840'
+]);
+
+export const SUPPORTED_IMAGE_QUALITIES = new Set(['auto', 'low', 'medium', 'high']);
+
+/**
+ * Tool options the backend rejects for the image model Codex currently routes
+ * to (gpt-image-2-codex). Caught locally so the failure is explained instead of
+ * surfacing as a bare HTTP 400.
+ */
+const REJECTED_TOOL_OPTIONS = {
+  background: 'The Codex image model does not support a transparent/opaque background option. Ask for a plain solid backdrop in the prompt instead.',
+  input_fidelity: 'The Codex image model does not support input_fidelity. Describe how closely to follow the reference image in the prompt instead.'
+};
+
+/**
+ * Build a request-shape error. The code lets the CLI print one actionable line
+ * instead of a stack trace, and marks it as pointless to retry unchanged.
+ *
+ * @param {string} code
+ * @param {string} message
+ * @returns {Error}
+ */
+function invalidRequest(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  error.retryable = false;
+  return error;
+}
+
+/**
+ * Return a redacted copy of request headers for debug output.
+ *
+ * @param {Record<string, string>} headers
+ * @returns {Record<string, string>}
+ */
+export function sanitizeHeaders(headers) {
+  const clone = { ...headers };
+  if (clone.Authorization) {
+    clone.Authorization = 'Bearer [REDACTED]';
+  }
+  if (clone['ChatGPT-Account-ID']) {
+    clone['ChatGPT-Account-ID'] = REDACTED_ACCOUNT_ID;
+  }
+  if (clone.session_id) {
+    clone.session_id = REDACTED_SESSION_ID;
+  }
+  return clone;
+}
+
+/**
+ * Return a redacted copy of the request body for debug output.
+ *
+ * @param {Record<string, unknown>} body
+ * @returns {Record<string, unknown>}
+ */
+export function sanitizeRequestBody(body) {
+  const clone = { ...body };
+
+  if (body?.client_metadata) {
+    clone.client_metadata = {
+      ...body.client_metadata,
+      'x-codex-installation-id': REDACTED_INSTALLATION_ID
+    };
+  }
+
+  if (Array.isArray(body?.input)) {
+    clone.input = body.input.map((item) => {
+      if (!Array.isArray(item?.content)) {
+        return item;
+      }
+      return {
+        ...item,
+        content: item.content.map((block) =>
+          block?.type === 'input_image' && block?.image_url
+            ? { ...block, image_url: REDACTED_IMAGE_DATA }
+            : block
+        )
+      };
+    });
+  }
+
+  return clone;
+}
+
+/**
+ * Build the Codex `/responses` request payload for an image generation turn.
+ *
+ * @param {{ baseUrl: string, session: { accessToken: string, accountId: string, installationId?: string | null }, prompt: string, model: string, originator: string, includeReasoning?: boolean, sessionId?: string, images?: string[], size?: string, quality?: string, imageModel?: string, toolOptions?: Record<string, unknown> }} options
+ * @returns {{ url: string, sessionId: string, headers: Record<string, string>, body: Record<string, unknown>, sanitized: { url: string, headers: Record<string, string>, body: Record<string, unknown> } }}
+ */
+export function buildResponsesRequest({
+  baseUrl,
+  session,
+  prompt,
+  model,
+  originator,
+  includeReasoning = true,
+  sessionId = crypto.randomUUID(),
+  images,
+  size,
+  quality,
+  imageModel,
+  toolOptions
+}) {
+  if (!prompt || !prompt.trim()) {
+    throw invalidRequest('MISSING_PROMPT', 'Prompt is required.');
+  }
+  if (size && !SUPPORTED_IMAGE_SIZES.has(size)) {
+    throw invalidRequest(
+      'UNSUPPORTED_IMAGE_SIZE',
+      `Unsupported image size: ${size}. Supported sizes: ${[...SUPPORTED_IMAGE_SIZES].join(', ')}.`
+    );
+  }
+  if (quality && !SUPPORTED_IMAGE_QUALITIES.has(quality)) {
+    throw invalidRequest(
+      'UNSUPPORTED_IMAGE_QUALITY',
+      `Unsupported image quality: ${quality}. Supported values: ${[...SUPPORTED_IMAGE_QUALITIES].join(', ')}.`
+    );
+  }
+  for (const [key, reason] of Object.entries(REJECTED_TOOL_OPTIONS)) {
+    if (toolOptions && key in toolOptions) {
+      throw invalidRequest('UNSUPPORTED_TOOL_OPTION', reason);
+    }
+  }
+
+  const url = new URL('responses', baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
+
+  const headers = {
+    Authorization: `Bearer ${session.accessToken}`,
+    'ChatGPT-Account-ID': session.accountId,
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+    originator,
+    session_id: sessionId
+  };
+
+  const content = [{ type: 'input_text', text: prompt }];
+  for (const image of images ?? []) {
+    content.push({ type: 'input_image', image_url: image });
+  }
+
+  const body = {
+    model,
+    instructions: '',
+    input: [{ type: 'message', role: 'user', content }],
+    tools: [
+      {
+        type: 'image_generation',
+        output_format: 'png',
+        ...(size ? { size } : {}),
+        ...(quality ? { quality } : {}),
+        ...(imageModel ? { model: imageModel } : {}),
+        ...(toolOptions ?? {})
+      }
+    ],
+    tool_choice: 'auto',
+    parallel_tool_calls: false,
+    reasoning: null,
+    store: false,
+    stream: true,
+    include: includeReasoning ? ['reasoning.encrypted_content'] : [],
+    client_metadata: session.installationId
+      ? { 'x-codex-installation-id': session.installationId }
+      : undefined
+  };
+
+  return {
+    url,
+    sessionId,
+    headers,
+    body,
+    sanitized: {
+      url,
+      headers: sanitizeHeaders(headers),
+      body: sanitizeRequestBody(body)
+    }
+  };
+}

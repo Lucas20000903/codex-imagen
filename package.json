@@ -1,0 +1,37 @@
+{
+  "name": "codex-imagen",
+  "version": "0.1.0",
+  "description": "Node.js library and CLI for image generation through the local Codex ChatGPT session",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "cxi": "./src/cli/generate.js"
+  },
+  "files": [
+    "src/",
+    "skills/",
+    "VERSION"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "smoke": "node src/cli/generate.js --prompt \"flat blue square icon\" --dry-run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "codex",
+    "image-generation",
+    "chatgpt",
+    "cli"
+  ],
+  "license": "MIT",
+  "private": false
+}
