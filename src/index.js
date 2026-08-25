@@ -5,15 +5,14 @@ export {
   REDACTED_ACCOUNT_ID,
   REDACTED_SESSION_ID,
   REDACTED_INSTALLATION_ID,
-  SUPPORTED_IMAGE_SIZES,
-  SUPPORTED_IMAGE_QUALITIES,
   buildResponsesRequest,
   sanitizeHeaders,
   sanitizeRequestBody
 } from './codex/buildResponsesRequest.js';
+export { composePrompt, SUPPORTED_IMAGE_SIZES } from './codex/composePrompt.js';
 export { parseSseText, summarizeEvents } from './codex/streamResponsesSse.js';
 export { extractImageGeneration } from './codex/extractImageGeneration.js';
-export { saveImage } from './fs/saveImage.js';
+export { saveImage, describePng } from './fs/saveImage.js';
 export { createProvider } from './providers/createProvider.js';
 export { createCodexHttpProvider } from './providers/codexHttpProvider.js';
 export { createCodexCliProvider } from './providers/codexCliProvider.js';

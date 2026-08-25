@@ -141,18 +141,15 @@ async function writeDebugArtifacts({ debugDir, payload }) {
  */
 export function createCodexCliProvider(config) {
   return {
-    async generateImage({ prompt, model, outputPath, debug = false, debugDir, execImpl = runCommand, images, size, quality, imageModel }) {
+    async generateImage({ prompt, model, outputPath, debug = false, debugDir, execImpl = runCommand, images, size, transparent }) {
       if (images && images.length > 0) {
         throw new Error('The codex-cli provider does not support reference images.');
       }
       if (size) {
-        throw new Error('The codex-cli provider cannot honor an output size.');
+        throw new Error('The codex-cli provider cannot pass an aspect hint through.');
       }
-      if (quality) {
-        throw new Error('The codex-cli provider cannot honor an image quality.');
-      }
-      if (imageModel) {
-        throw new Error('The codex-cli provider cannot select the image model.');
+      if (transparent) {
+        throw new Error('The codex-cli provider cannot request a transparent background.');
       }
       if (!prompt || !prompt.trim()) {
         throw new Error('Prompt is required.');

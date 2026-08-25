@@ -1,22 +1,11 @@
 import crypto from 'node:crypto';
 
+import { composePrompt, SUPPORTED_IMAGE_SIZES } from './composePrompt.js';
+
 export const REDACTED_ACCOUNT_ID = '[REDACTED_ACCOUNT_ID]';
 export const REDACTED_SESSION_ID = '[REDACTED_SESSION_ID]';
 export const REDACTED_INSTALLATION_ID = '[REDACTED_INSTALLATION_ID]';
 export const REDACTED_IMAGE_DATA = '[REDACTED_IMAGE_DATA]';
-
-export const SUPPORTED_IMAGE_SIZES = new Set([
-  'auto',
-  '1024x1024',
-  '1536x1024',
-  '1024x1536',
-  '2048x2048',
-  '2048x1152',
-  '3840x2160',
-  '2160x3840'
-]);
-
-export const SUPPORTED_IMAGE_QUALITIES = new Set(['auto', 'low', 'medium', 'high']);
 
 /**
  * Tool options the backend rejects for the image model Codex currently routes
@@ -114,8 +103,7 @@ export function buildResponsesRequest({
   sessionId = crypto.randomUUID(),
   images,
   size,
-  quality,
-  imageModel,
+  transparent = false,
   toolOptions
 }) {
   if (!prompt || !prompt.trim()) {
@@ -124,13 +112,7 @@ export function buildResponsesRequest({
   if (size && !SUPPORTED_IMAGE_SIZES.has(size)) {
     throw invalidRequest(
       'UNSUPPORTED_IMAGE_SIZE',
-      `Unsupported image size: ${size}. Supported sizes: ${[...SUPPORTED_IMAGE_SIZES].join(', ')}.`
-    );
-  }
-  if (quality && !SUPPORTED_IMAGE_QUALITIES.has(quality)) {
-    throw invalidRequest(
-      'UNSUPPORTED_IMAGE_QUALITY',
-      `Unsupported image quality: ${quality}. Supported values: ${[...SUPPORTED_IMAGE_QUALITIES].join(', ')}.`
+      `Unknown image size: ${size}. Known sizes: ${[...SUPPORTED_IMAGE_SIZES].join(', ')}.`
     );
   }
   for (const [key, reason] of Object.entries(REJECTED_TOOL_OPTIONS)) {
@@ -150,7 +132,8 @@ export function buildResponsesRequest({
     session_id: sessionId
   };
 
-  const content = [{ type: 'input_text', text: prompt }];
+  const composedPrompt = composePrompt({ prompt, size, transparent });
+  const content = [{ type: 'input_text', text: composedPrompt }];
   for (const image of images ?? []) {
     content.push({ type: 'input_image', image_url: image });
   }
@@ -163,9 +146,6 @@ export function buildResponsesRequest({
       {
         type: 'image_generation',
         output_format: 'png',
-        ...(size ? { size } : {}),
-        ...(quality ? { quality } : {}),
-        ...(imageModel ? { model: imageModel } : {}),
         ...(toolOptions ?? {})
       }
     ],
@@ -183,6 +163,7 @@ export function buildResponsesRequest({
   return {
     url,
     sessionId,
+    composedPrompt,
     headers,
     body,
     sanitized: {

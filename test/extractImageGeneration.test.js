@@ -3,15 +3,26 @@ import test from 'node:test';
 
 import { extractImageGeneration } from '../src/codex/extractImageGeneration.js';
 
-test('returns the completed image item', () => {
+test('returns the completed image item with the settings the backend chose', () => {
   const result = extractImageGeneration({
-    items: [{ type: 'image_generation_call', id: 'call_1', result: 'AAAA', revised_prompt: 'a leaf' }],
+    items: [
+      {
+        type: 'image_generation_call',
+        id: 'call_1',
+        result: 'AAAA',
+        revised_prompt: 'a leaf',
+        size: '1254x1254',
+        quality: 'medium',
+        background: 'transparent'
+      }
+    ],
     events: []
   });
 
   assert.equal(result.resultBase64, 'AAAA');
   assert.equal(result.revisedPrompt, 'a leaf');
   assert.equal(result.partial, false);
+  assert.deepEqual(result.settings, { size: '1254x1254', quality: 'medium', background: 'transparent' });
 });
 
 test('falls back to the last partial frame and flags it', () => {

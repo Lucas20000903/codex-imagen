@@ -50,6 +50,13 @@ export function extractImageGeneration(source) {
       revisedPrompt: imageItem.revised_prompt ?? null,
       resultBase64: imageItem.result,
       partial: false,
+      // What the model actually chose, which is the only authority here — the
+      // values sent on the tool definition are discarded by the backend.
+      settings: {
+        size: imageItem.size ?? null,
+        quality: imageItem.quality ?? null,
+        background: imageItem.background ?? null
+      },
       item: imageItem
     };
   }
@@ -68,6 +75,7 @@ export function extractImageGeneration(source) {
       revisedPrompt: partialImageEvent.data.revised_prompt ?? null,
       resultBase64: partialImageEvent.data.partial_image_b64,
       partial: true,
+      settings: { size: null, quality: null, background: null },
       item: {
         type: 'image_generation_call',
         id: partialImageEvent.data.item_id,

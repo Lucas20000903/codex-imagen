@@ -3,7 +3,7 @@ import { createCodexHttpProvider } from './codexHttpProvider.js';
 import { AUTO_PROVIDER, CODEX_CLI_PROVIDER, CODEX_HTTP_PROVIDER } from './providerTypes.js';
 
 /** Options the codex-cli fallback cannot honor, so auto must not silently drop them. */
-const HTTP_ONLY_OPTIONS = ['size', 'quality', 'imageModel', 'images'];
+const HTTP_ONLY_OPTIONS = ['size', 'transparent', 'images'];
 
 /**
  * Create the configured provider implementation.

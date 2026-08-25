@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { KNOWN_MODELS, resolveConfig, UNSUPPORTED_WARNING } from '../config.js';
-import { SUPPORTED_IMAGE_QUALITIES, SUPPORTED_IMAGE_SIZES } from '../codex/buildResponsesRequest.js';
+import { SUPPORTED_IMAGE_SIZES } from '../codex/composePrompt.js';
 import { createProvider } from '../providers/createProvider.js';
 import { SUPPORTED_PROVIDERS } from '../providers/providerTypes.js';
 
@@ -20,8 +20,6 @@ const VALUE_FLAGS = {
   '--prompt': 'prompt',
   '--output': 'output',
   '--model': 'model',
-  '--image-model': 'imageModel',
-  '--quality': 'quality',
   '--size': 'size',
   '--provider': 'provider',
   '--codex-home': 'codexHome',
@@ -32,6 +30,7 @@ const VALUE_FLAGS = {
 };
 
 const BOOLEAN_FLAGS = {
+  '--transparent': 'transparent',
   '--dry-run': 'dryRun',
   '--debug': 'debug',
   '--help': 'help',
@@ -41,7 +40,7 @@ const BOOLEAN_FLAGS = {
 };
 
 function parseArgs(argv) {
-  const parsed = { dryRun: false, debug: false, help: false, version: false, images: [] };
+  const parsed = { dryRun: false, debug: false, help: false, version: false, transparent: false, images: [] };
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -123,11 +122,11 @@ Options:
   --prompt <text>               Required prompt text
   --output <path>               Output PNG path
   --image <path>                Reference image (repeat for multiple)
-  --size <value>                ${[...SUPPORTED_IMAGE_SIZES].join(', ')}
-  --quality <value>             ${[...SUPPORTED_IMAGE_QUALITIES].join(', ')}
+  --size <value>                Aspect hint, NOT exact pixels — see below
+                                ${[...SUPPORTED_IMAGE_SIZES].join(', ')}
+  --transparent                 Ask for a transparent background
   --model <name>                Orchestrator model (default: ${KNOWN_MODELS[0]})
                                 Known: ${KNOWN_MODELS.join(', ')}
-  --image-model <name>          Image model override, e.g. gpt-image-2
   --provider <name>             ${SUPPORTED_PROVIDERS.join(' | ')}
   --dry-run                     Print the request shape without calling the backend
   --debug                       Write sanitized request/response dumps
@@ -139,8 +138,9 @@ Options:
   -h, --help                    Show help
   -v, --version                 Print the version and exit
 
-Not supported by the Codex image model: transparent backgrounds, input_fidelity.
-Ask for a solid backdrop in the prompt instead.
+The backend ignores tool-level size/quality/model fields entirely, so --size and
+--transparent are folded into the prompt instead. The model still picks the final
+dimensions; the JSON output reports what was actually delivered.
 `);
 }
 
@@ -183,8 +183,7 @@ async function main() {
         : null,
     images,
     ...(args.size ? { size: args.size } : {}),
-    ...(args.quality ? { quality: args.quality } : {}),
-    ...(args.imageModel ? { imageModel: args.imageModel } : {})
+    ...(args.transparent ? { transparent: true } : {})
   });
 
   if (result.mode === 'dry-run') {
@@ -201,6 +200,9 @@ async function main() {
       {
         provider: result.provider || config.provider,
         savedPath: result.savedPath,
+        image: result.image,
+        requestedSize: result.requestedSize,
+        backendSettings: result.backendSettings,
         model: args.model || config.defaultModel,
         responseId: result.responseId,
         sessionId: result.sessionId,

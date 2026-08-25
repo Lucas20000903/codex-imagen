@@ -10,12 +10,8 @@ test('rejects an empty prompt', () => {
   assert.throws(() => buildResponsesRequest({ ...base, prompt: '   ' }), /Prompt is required/);
 });
 
-test('rejects an unsupported size', () => {
-  assert.throws(() => buildResponsesRequest({ ...base, prompt: 'x', size: '800x600' }), /Unsupported image size/);
-});
-
-test('rejects an unsupported quality', () => {
-  assert.throws(() => buildResponsesRequest({ ...base, prompt: 'x', quality: 'ultra' }), /Unsupported image quality/);
+test('rejects a size that is not on the known list', () => {
+  assert.throws(() => buildResponsesRequest({ ...base, prompt: 'x', size: '800x600' }), /Unknown image size/);
 });
 
 test('rejects tool options the Codex image model refuses', () => {
@@ -25,27 +21,22 @@ test('rejects tool options the Codex image model refuses', () => {
   );
 });
 
-test('puts size, quality, and image model on the tool', () => {
-  const { body } = buildResponsesRequest({
+test('never puts size on the tool, because the backend discards it', () => {
+  const { body } = buildResponsesRequest({ ...base, prompt: 'a leaf', size: '1536x1024' });
+  assert.deepEqual(body.tools[0], { type: 'image_generation', output_format: 'png' });
+});
+
+test('steers size and transparency through the prompt instead', () => {
+  const { body, composedPrompt } = buildResponsesRequest({
     ...base,
     prompt: 'a leaf',
     size: '1536x1024',
-    quality: 'high',
-    imageModel: 'gpt-image-2'
+    transparent: true
   });
 
-  assert.deepEqual(body.tools[0], {
-    type: 'image_generation',
-    output_format: 'png',
-    size: '1536x1024',
-    quality: 'high',
-    model: 'gpt-image-2'
-  });
-});
-
-test('omits optional tool fields when not requested', () => {
-  const { body } = buildResponsesRequest({ ...base, prompt: 'a leaf' });
-  assert.deepEqual(body.tools[0], { type: 'image_generation', output_format: 'png' });
+  assert.match(composedPrompt, /3:2 landscape/);
+  assert.match(composedPrompt, /transparent background/);
+  assert.equal(body.input[0].content[0].text, composedPrompt);
 });
 
 test('appends reference images as input_image blocks', () => {
@@ -74,7 +65,6 @@ test('request-shape errors carry a code so the CLI can print one line', () => {
   for (const [args, code] of [
     [{ prompt: '' }, 'MISSING_PROMPT'],
     [{ prompt: 'x', size: '800x600' }, 'UNSUPPORTED_IMAGE_SIZE'],
-    [{ prompt: 'x', quality: 'ultra' }, 'UNSUPPORTED_IMAGE_QUALITY'],
     [{ prompt: 'x', toolOptions: { input_fidelity: 'high' } }, 'UNSUPPORTED_TOOL_OPTION']
   ]) {
     assert.throws(

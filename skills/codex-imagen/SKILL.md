@@ -32,18 +32,33 @@ cxi --prompt "Make this cat wear a hat" --image ./cat.png --output ./cat-hat.png
 cxi --prompt "Combine these two styles" --image ./a.png --image ./b.png --output ./combined.png
 ```
 
-## Size and quality
+## Aspect ratio
 
 ```bash
-cxi --prompt "a sunset over mountains" --size 1536x1024 --quality high --output ./sunset.png
+cxi --prompt "a sunset over mountains" --size 2048x1152 --output ./sunset.png
 ```
 
-- `--size`: `auto`, `1024x1024`, `2048x2048` (square); `1536x1024`, `2048x1152`,
-  `3840x2160` (landscape); `1024x1536`, `2160x3840` (portrait)
-- `--quality`: `auto`, `low`, `medium`, `high`
+`--size` accepts `auto`, `1024x1024`, `2048x2048` (square), `1536x1024`,
+`2048x1152`, `3840x2160` (landscape), `1024x1536`, `2160x3840` (portrait).
 
-Without `--size` the model picks its own dimensions, which are often not a
-listed value. Pass `--size` whenever the output has to hit exact dimensions.
+**It is an aspect-ratio hint, not a pixel guarantee.** The backend discards
+tool-level size entirely, so `cxi` folds the ratio into the prompt instead. You
+get the right shape and roughly the right scale — asking for `2160x3840` returns
+something like 941×1672, the same 9:16. The output JSON reports the delivered
+dimensions under `image`. **If the user needs exact pixels, generate and then
+resize or crop; do not promise exact dimensions from this tool alone.**
+
+## Transparent background
+
+```bash
+cxi --prompt "a red maple leaf icon, centered" --transparent --output ./leaf.png
+```
+
+Transparency works and produces a real alpha channel. Use `--transparent` for
+icons, logos, stickers, and cutouts. Check `image.hasAlpha` in the output to
+confirm it came back transparent — the model decides, so a scene-like prompt may
+still come back opaque. Keeping the subject singular and isolated
+("a single X, centered, nothing else") makes transparency far more likely.
 
 ## Dry run
 
@@ -60,9 +75,9 @@ cxi --prompt "flat blue square icon" --dry-run
 
 ## What this backend cannot do
 
-- **No transparent backgrounds.** The image model rejects the option outright.
-  Ask for a solid backdrop in the prompt and composite later if the user needs
-  transparency — do not promise a transparent PNG.
+- **No exact pixel dimensions.** See the aspect-ratio note above.
+- **No quality control.** The model picks it; there is no flag, and adding one
+  would do nothing.
 - **No `input_fidelity` control.** Describe in the prompt how closely to follow a
   reference image instead.
 
