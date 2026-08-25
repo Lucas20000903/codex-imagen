@@ -91,11 +91,22 @@ Transparency works and produces a real alpha channel — a capability that lande
 in Codex's bundled imagegen skill on 2026-08-25. Use `--transparent` for icons,
 logos, stickers, and cutouts.
 
-**Transparency survives generation, not editing.** Passing `--image` alongside
-`--transparent` returns an opaque result no matter how the prompt is worded. If
-the user wants a transparent variant of an existing image, regenerate it from a
-description rather than editing, and tell them why — do not hand back an opaque
-PNG as if it were a cutout. Check `image.hasAlpha` in the output to
+**Transparency survives generation, not editing — the wording decides, not the
+flags.** `--transparent` works alongside `--image`; what kills the alpha channel
+is phrasing the request as an edit of the existing picture.
+
+| Prompt shape | Transparent |
+|---|---|
+| "a single blue maple leaf icon, centered, nothing else, in the style of the reference" | 4 of 5 |
+| "change only the leaf colour to blue; keep the shape unchanged" | 0 of 7 |
+
+So when a cutout is wanted from a reference, describe the **result** and use the
+reference for style, rather than describing a change to the original. Reference
+images may be opaque; that does not stop the output from being transparent.
+
+It is not guaranteed either way, so check `image.hasAlpha` in the output. If it
+came back opaque, rephrase toward generation and try once more before telling
+the user it cannot be done. Check `image.hasAlpha` in the output to
 confirm it came back transparent — the model decides, so a scene-like prompt may
 still come back opaque. Keeping the subject singular and isolated
 ("a single X, centered, nothing else") makes transparency far more likely.
