@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { loadCodexSession } from '../auth/loadCodexSession.js';
+import { refreshCodexSession, REFRESH_SKEW_SECONDS } from '../auth/refreshSession.js';
 import { validateCodexSession } from '../auth/validateSession.js';
 import {
   buildResponsesRequest,
@@ -142,9 +143,40 @@ async function writeDebugArtifacts({ debugDir, request, responseStatus, response
 }
 
 /**
+ * Load the session, rotating the OAuth tokens first when they are about to
+ * expire. Without this the tool simply stops working a few days after the last
+ * `codex login`, mid-request, with a bare 401.
+ *
+ * @returns {Promise<{ session: object, notes: string[] }>}
+ */
+async function loadFreshSession(config, { force = false, notes = [] } = {}) {
+  const session = await loadCodexSession(config);
+
+  const needsRefresh = force || session.expiresInSeconds <= REFRESH_SKEW_SECONDS;
+  if (!needsRefresh || config.refresh === false || !session.refreshToken) {
+    if (needsRefresh && config.refresh === false) {
+      notes.push('Access token is expiring but refresh is disabled.');
+    }
+    return { session, notes };
+  }
+
+  const result = await refreshCodexSession({
+    authFile: config.authFile,
+    refreshToken: session.refreshToken,
+    refreshUrl: config.refreshUrl,
+    reload: () => loadCodexSession(config)
+  });
+
+  if (result.skipped) {
+    notes.push(`Token refresh skipped: ${result.skipped}.`);
+  }
+  return { session: await loadCodexSession(config), notes };
+}
+
+/**
  * Create a provider that talks directly to the Codex HTTP backend.
  *
- * @param {{ baseUrl: string, authFile: string, installationIdFile: string, defaultOriginator: string }} config
+ * @param {{ baseUrl: string, authFile: string, installationIdFile: string, defaultOriginator: string, refresh?: boolean, refreshUrl?: string }} config
  * @returns {{ generateImage: (args: object) => Promise<object> }}
  */
 export function createCodexHttpProvider(config) {
@@ -162,9 +194,10 @@ export function createCodexHttpProvider(config) {
       transparent,
       outputFormat
     }) {
-      const session = await loadCodexSession(config);
+      const authNotes = [];
+      let { session } = await loadFreshSession(config, { notes: authNotes });
       const validation = validateCodexSession(session);
-      const request = buildResponsesRequest({
+      let request = buildResponsesRequest({
         baseUrl: config.baseUrl,
         session,
         prompt,
@@ -184,19 +217,42 @@ export function createCodexHttpProvider(config) {
         throw new Error('No fetch implementation is available in this Node runtime.');
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const send = async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+          return await fetchImpl(request.url, {
+            method: 'POST',
+            headers: request.headers,
+            body: JSON.stringify(request.body),
+            signal: controller.signal
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      };
 
-      let response;
-      try {
-        response = await fetchImpl(request.url, {
-          method: 'POST',
-          headers: request.headers,
-          body: JSON.stringify(request.body),
-          signal: controller.signal
+      let response = await send();
+
+      // An expired token can still slip through when the clock is off or the
+      // token was revoked early; rotate once and try the request again.
+      if (response.status === 401 && config.refresh !== false) {
+        const refreshed = await loadFreshSession(config, { force: true, notes: authNotes });
+        session = refreshed.session;
+        request = buildResponsesRequest({
+          baseUrl: config.baseUrl,
+          session,
+          prompt,
+          model,
+          originator: config.defaultOriginator,
+          sessionId: request.sessionId,
+          images,
+          size,
+          transparent,
+          outputFormat
         });
-      } finally {
-        clearTimeout(timeoutId);
+        authNotes.push('Refreshed the Codex token after a 401 and retried.');
+        response = await send();
       }
 
       const responseHeaders = Object.fromEntries(response.headers.entries());
@@ -259,7 +315,7 @@ export function createCodexHttpProvider(config) {
       const generation = extractImageGeneration(parsed);
       const saved = await saveImage({ resultBase64: generation.resultBase64, outputPath });
 
-      const warnings = [...validation.warnings];
+      const warnings = [...validation.warnings, ...authNotes];
 
       // The ratio rides on the prompt, so the model can quietly land somewhere
       // else. Say so rather than letting the caller assume the request stuck.

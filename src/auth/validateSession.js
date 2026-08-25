@@ -1,21 +1,4 @@
-function decodeJwtPayload(token) {
-  if (typeof token !== 'string') {
-    return null;
-  }
-
-  const parts = token.split('.');
-  if (parts.length < 2) {
-    return null;
-  }
-
-  try {
-    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = payload + '='.repeat((4 - (payload.length % 4 || 4)) % 4);
-    return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
-  } catch {
-    return null;
-  }
-}
+import { tokenSecondsLeft } from './jwt.js';
 
 /**
  * Validate the minimum session fields required to call the Codex backend.
@@ -47,11 +30,9 @@ export function validateCodexSession(session) {
     warnings.push('Missing installation_id; requests will omit x-codex-installation-id client metadata.');
   }
 
-  const expiresAtSeconds = decodeJwtPayload(session?.accessToken)?.exp;
-  if (typeof expiresAtSeconds === 'number' && expiresAtSeconds * 1000 <= Date.now()) {
-    warnings.push(
-      `access token appears expired at ${new Date(expiresAtSeconds * 1000).toISOString()}; run \`codex login\` if requests fail.`
-    );
+  // Expiry is handled by the refresh path, so only flag what refresh cannot fix.
+  if (tokenSecondsLeft(session?.accessToken) <= 0 && !session?.refreshToken) {
+    warnings.push('access token is expired and no refresh token is present; run `codex login`.');
   }
 
   if (issues.length > 0) {

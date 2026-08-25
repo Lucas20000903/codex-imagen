@@ -1,6 +1,15 @@
 export { loadCodexSession } from './auth/loadCodexSession.js';
+export { decodeJwtPayload, tokenSecondsLeft } from './auth/jwt.js';
+export {
+  refreshCodexSession,
+  writeAuthAtomic,
+  withAuthLock,
+  DEFAULT_REFRESH_URL,
+  REFRESH_SKEW_SECONDS
+} from './auth/refreshSession.js';
+export { classifyRetry, retryDelayMs, withRetries } from './retry.js';
 export { validateCodexSession } from './auth/validateSession.js';
-export { resolveConfig, KNOWN_MODELS, UNSUPPORTED_WARNING } from './config.js';
+export { resolveConfig, KNOWN_MODELS, DEFAULT_RETRIES, MAX_RETRIES, UNSUPPORTED_WARNING } from './config.js';
 export {
   REDACTED_ACCOUNT_ID,
   REDACTED_SESSION_ID,

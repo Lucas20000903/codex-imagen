@@ -1,5 +1,7 @@
 import fs from 'node:fs/promises';
 
+import { tokenSecondsLeft } from './jwt.js';
+
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
@@ -8,7 +10,7 @@ function normalizeString(value) {
  * Load Codex auth/session state from the local files on disk.
  *
  * @param {{ authFile: string, installationIdFile: string }} options
- * @returns {Promise<{ authFile: string, authMode: string | null, lastRefresh: string | null, accessToken: string | null, accountId: string | null, installationId: string | null }>}
+ * @returns {Promise<{ authFile: string, authMode: string | null, lastRefresh: string | null, accessToken: string | null, refreshToken: string | null, accountId: string | null, installationId: string | null, expiresInSeconds: number, raw: object }>}
  */
 export async function loadCodexSession({ authFile, installationIdFile }) {
   let authRaw;
@@ -20,6 +22,7 @@ export async function loadCodexSession({ authFile, installationIdFile }) {
         `No Codex auth state at ${authFile}. Sign in with \`codex login\` first — this tool never creates auth state on its own.`
       );
       error.code = 'MISSING_CODEX_AUTH';
+      error.retryable = false;
       throw error;
     }
     throw cause;
@@ -37,12 +40,17 @@ export async function loadCodexSession({ authFile, installationIdFile }) {
     }
   }
 
+  const accessToken = normalizeString(tokens?.access_token);
+
   return {
     authFile,
     authMode: normalizeString(authJson?.auth_mode),
     lastRefresh: normalizeString(authJson?.last_refresh),
-    accessToken: normalizeString(tokens?.access_token),
+    accessToken,
+    refreshToken: normalizeString(tokens?.refresh_token),
     accountId: normalizeString(tokens?.account_id),
-    installationId
+    installationId,
+    expiresInSeconds: tokenSecondsLeft(accessToken),
+    raw: authJson
   };
 }

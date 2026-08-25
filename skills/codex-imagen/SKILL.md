@@ -142,6 +142,11 @@ cxi --prompt "flat blue square icon" --dry-run
 - `UNAUTHORIZED` / `MISSING_CODEX_AUTH` — tell the user to run `codex login`.
 - `RATE_LIMITED` — report it; do not hammer the backend.
 
+`cxi` already retries transient failures (empty streams, 5xx, 429, transport)
+twice on its own, and refreshes the Codex token when it is about to expire. So a
+failure that reaches you has already survived retries — do not loop on it
+yourself. Report it instead.
+
 ## After running
 
 `cxi` writes the PNG to `--output` and prints a JSON summary containing

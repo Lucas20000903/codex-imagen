@@ -5,8 +5,25 @@ import { AUTO_PROVIDER, CODEX_CLI_PROVIDER, CODEX_HTTP_PROVIDER } from './provid
 /** Options the codex-cli fallback cannot honor, so auto must not silently drop them. */
 const HTTP_ONLY_OPTIONS = ['size', 'transparent', 'images'];
 
-/** png is what the codex-cli fallback recovers, so only other formats block it. */
-const NON_PNG = (value) => Boolean(value) && value !== 'png';
+/**
+ * Which requested options the codex-cli fallback would silently drop. Falling
+ * back and ignoring them would hand back something the caller did not ask for.
+ *
+ * @param {object} args
+ * @returns {string[]}
+ */
+export function blockedFallbackOptions(args) {
+  const blocked = HTTP_ONLY_OPTIONS.filter((key) => {
+    const value = args?.[key];
+    return Array.isArray(value) ? value.length > 0 : Boolean(value);
+  });
+
+  // png is what the fallback recovers from disk, so only other formats block it.
+  if (args?.outputFormat && args.outputFormat !== 'png') {
+    blocked.push('outputFormat');
+  }
+  return blocked;
+}
 
 /**
  * Create the configured provider implementation.
@@ -36,13 +53,7 @@ export function createProvider(config) {
               throw httpError;
             }
 
-            const blocked = HTTP_ONLY_OPTIONS.filter((key) => {
-              const value = args?.[key];
-              return Array.isArray(value) ? value.length > 0 : Boolean(value);
-            });
-            if (NON_PNG(args?.outputFormat)) {
-              blocked.push('outputFormat');
-            }
+            const blocked = blockedFallbackOptions(args);
             if (blocked.length > 0) {
               const error = new Error(
                 `Auto cannot fall back to codex-cli because it cannot honor: ${blocked.join(', ')}.`

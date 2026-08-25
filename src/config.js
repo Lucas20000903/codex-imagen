@@ -1,9 +1,14 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import { DEFAULT_REFRESH_URL } from './auth/refreshSession.js';
 import { CODEX_HTTP_PROVIDER } from './providers/providerTypes.js';
 
 const DEFAULT_CODEX_HOME = path.join(os.homedir(), '.codex');
+
+/** Roughly one empty stream per twenty calls was measured, so retry by default. */
+export const DEFAULT_RETRIES = 2;
+export const MAX_RETRIES = 10;
 
 /**
  * Orchestrator models the Codex backend currently accepts. The first entry is
@@ -35,6 +40,10 @@ export function resolveConfig(overrides = {}) {
     provider: overrides.provider || process.env.CODEX_IMAGEN_PROVIDER || CODEX_HTTP_PROVIDER,
     defaultModel: overrides.defaultModel || process.env.CODEX_IMAGEN_MODEL || process.env.CODEX_MODEL || KNOWN_MODELS[0],
     defaultOriginator: overrides.originator || process.env.CODEX_IMAGEN_ORIGINATOR || 'codex_cli_rs',
+    refresh: overrides.refresh !== false,
+    refreshUrl:
+      overrides.refreshUrl || process.env.CODEX_REFRESH_TOKEN_URL_OVERRIDE || DEFAULT_REFRESH_URL,
+    retries: Number.isInteger(overrides.retries) ? overrides.retries : DEFAULT_RETRIES,
     defaultOutputPath:
       overrides.defaultOutputPath ||
       process.env.CODEX_IMAGEN_OUTPUT ||

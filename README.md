@@ -68,6 +68,10 @@ cxi --prompt "flat blue square icon" --dry-run
 | `--format <name>` | `png` (default), `jpeg`, `webp` |
 | `--model <name>` | orchestrator model — default `gpt-5.6-sol`; also `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`. All five verified live; unknown names are rejected with HTTP 400 |
 | `--provider <name>` | `codex-http` (default), `codex-cli`, `auto` |
+| `--retries <n>` | retry transient failures (default 2, max 10) |
+| `--no-retry` | do not retry |
+| `--no-refresh` | do not rotate the Codex OAuth token |
+| `--refresh-url <url>` | override the OAuth token endpoint |
 | `--dry-run` / `--debug` / `--debug-dir <path>` | diagnostics |
 
 Environment overrides: `CODEX_HOME`, `CODEX_IMAGEN_BASE_URL`, `CODEX_IMAGEN_AUTH_FILE`,
@@ -236,6 +240,36 @@ enough.
 
 An empty turn with no text at all is reported separately as
 `MISSING_IMAGE_GENERATION_OUTPUT` and *is* worth retrying.
+
+## Staying signed in
+
+Codex access tokens expire in days, so a tool that only reads `auth.json` stops
+working without warning. `cxi` rotates them the way Codex does:
+
+- refreshes when under five minutes remain, before the request goes out
+- refreshes once more and retries if the backend still answers 401
+- takes a lock beside `auth.json` so two processes cannot rotate at once, since
+  the loser's refresh token would be invalidated
+- writes through a temp file and `rename`, at mode `0600`, preserving every
+  field it did not set — a half-written `auth.json` would cost you your login
+- when another process rotated first, adopts that token instead of forcing a
+  re-login
+
+`--no-refresh` turns all of it off and leaves the file untouched.
+
+A refresh token that is genuinely expired or revoked cannot be rescued; `cxi`
+says so and points at `codex login` rather than retrying.
+
+## Retries
+
+Roughly one call in twenty returns HTTP 200 with no image at all — measured over
+twenty timed runs. That is a transient stream failure, not a refusal, so `cxi`
+retries it twice by default with exponential backoff and jitter.
+
+It retries only what a retry can fix: empty streams, 5xx, 429, malformed stream
+frames, and transport errors. It never retries a declined prompt, a malformed
+request, or dead credentials — those fail identically every time, and retrying
+just spends your quota to reach the same message.
 
 ## Providers
 

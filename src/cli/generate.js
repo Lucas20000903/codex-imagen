@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { KNOWN_MODELS, resolveConfig, UNSUPPORTED_WARNING } from '../config.js';
+import { DEFAULT_RETRIES, KNOWN_MODELS, MAX_RETRIES, resolveConfig, UNSUPPORTED_WARNING } from '../config.js';
+import { withRetries } from '../retry.js';
 import { FIXED_PIXEL_AREA } from '../codex/composePrompt.js';
 import { SUPPORTED_OUTPUT_FORMATS } from '../codex/buildResponsesRequest.js';
 import { createProvider } from '../providers/createProvider.js';
@@ -28,11 +29,15 @@ const VALUE_FLAGS = {
   '--base-url': 'baseUrl',
   '--auth-file': 'authFile',
   '--installation-id-file': 'installationIdFile',
-  '--debug-dir': 'debugDir'
+  '--debug-dir': 'debugDir',
+  '--retries': 'retries',
+  '--refresh-url': 'refreshUrl'
 };
 
 const BOOLEAN_FLAGS = {
   '--transparent': 'transparent',
+  '--no-retry': 'noRetry',
+  '--no-refresh': 'noRefresh',
   '--dry-run': 'dryRun',
   '--debug': 'debug',
   '--help': 'help',
@@ -131,6 +136,10 @@ Options:
   --model <name>                Orchestrator model (default: ${KNOWN_MODELS[0]})
                                 Known: ${KNOWN_MODELS.join(', ')}
   --provider <name>             ${SUPPORTED_PROVIDERS.join(' | ')}
+  --retries <n>                 Retry transient failures (default ${DEFAULT_RETRIES}, max ${MAX_RETRIES})
+  --no-retry                    Do not retry at all
+  --no-refresh                  Do not rotate the Codex OAuth token
+  --refresh-url <url>           Override the OAuth token endpoint
   --dry-run                     Print the request shape without calling the backend
   --debug                       Write sanitized request/response dumps
   --debug-dir <path>            Directory for those dumps
@@ -164,6 +173,20 @@ async function main() {
     return;
   }
 
+  if (args.retries !== undefined) {
+    const parsed = Number(args.retries);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > MAX_RETRIES) {
+      throw new Error(`--retries must be a whole number from 0 to ${MAX_RETRIES}.`);
+    }
+    args.retries = parsed;
+  }
+  if (args.noRetry) {
+    args.retries = 0;
+  }
+  if (args.noRefresh) {
+    args.refresh = false;
+  }
+
   const config = resolveConfig(args);
   if (!SUPPORTED_PROVIDERS.includes(config.provider)) {
     throw new Error(`Unsupported provider: ${config.provider}. Supported: ${SUPPORTED_PROVIDERS.join(', ')}.`);
@@ -181,22 +204,36 @@ async function main() {
     console.warn(`warning: --format ${requestedFormat} but --output ends in .${outputExtension}; the file will hold ${requestedFormat} bytes.`);
   }
 
-  const result = await provider.generateImage({
-    prompt: args.prompt,
-    model: args.model || config.defaultModel,
-    outputPath,
-    dryRun: args.dryRun,
-    debug: args.debug,
-    debugDir: args.debugDir
-      ? path.resolve(args.debugDir)
-      : args.debug
-        ? path.resolve('.debug-codex-imagen')
-        : null,
-    images,
-    ...(args.size ? { size: args.size } : {}),
-    ...(args.transparent ? { transparent: true } : {}),
-    ...(args.outputFormat ? { outputFormat: args.outputFormat } : {})
-  });
+  const result = await withRetries(
+    (attempt) => {
+      if (attempt > 0) {
+        console.warn(`codex-imagen: attempt ${attempt + 1}/${config.retries + 1}`);
+      }
+      return provider.generateImage({
+      prompt: args.prompt,
+      model: args.model || config.defaultModel,
+      outputPath,
+      dryRun: args.dryRun,
+      debug: args.debug,
+      debugDir: args.debugDir
+        ? path.resolve(args.debugDir)
+        : args.debug
+          ? path.resolve('.debug-codex-imagen')
+          : null,
+      images,
+      ...(args.size ? { size: args.size } : {}),
+      ...(args.transparent ? { transparent: true } : {}),
+        ...(args.outputFormat ? { outputFormat: args.outputFormat } : {})
+      });
+    },
+    {
+      retries: config.retries,
+      onRetry: ({ attempt, retries, reason, delayMs }) =>
+        console.warn(
+          `codex-imagen: ${reason}; retrying ${attempt}/${retries} in ${(delayMs / 1000).toFixed(1)}s`
+        )
+    }
+  );
 
   if (result.mode === 'dry-run') {
     console.log(JSON.stringify(result, null, 2));
