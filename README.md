@@ -66,7 +66,7 @@ cxi --prompt "flat blue square icon" --dry-run
 | `--size <value>` | aspect ratio as `WxH`, `W:H`, or `auto` — sets the shape, **not** the pixel count |
 | `--transparent` | ask for a transparent background |
 | `--format <name>` | `png` (default), `jpeg`, `webp` |
-| `--model <name>` | orchestrator model — default `gpt-5.6-sol`; also `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4` |
+| `--model <name>` | orchestrator model — default `gpt-5.6-sol`; also `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`. All five verified live; unknown names are rejected with HTTP 400 |
 | `--provider <name>` | `codex-http` (default), `codex-cli`, `auto` |
 | `--dry-run` / `--debug` / `--debug-dir <path>` | diagnostics |
 
@@ -76,15 +76,21 @@ Environment overrides: `CODEX_HOME`, `CODEX_IMAGEN_BASE_URL`, `CODEX_IMAGEN_AUTH
 
 ## How this backend actually behaves
 
-Measured against codex-cli 0.149.1. Of the options the public Images API exposes,
-this path honors almost none of them:
+Measured 2026-08-25 against codex-cli 0.149.1 with the bundled imagegen skill
+stamped 2026-08-25 08:53 KST. **Pin both numbers.** The system skill at
+`$CODEX_HOME/skills/.system/imagegen/` updates independently of the CLI binary —
+here it moved a day after the CLI did — and it is the skill, not the CLI version,
+that governs the behavior below.
+
+Of the options the public Images API exposes, this path honors almost none:
 
 | Tool field | Honored? | Evidence |
 |---|---|---|
 | `output_format` | **yes** | `png` 840KB, `jpeg` 59KB, `webp` 639KB — all valid files |
 | `size` | no | `size: "totally-bogus"` returns HTTP 200; the value is never applied |
 | `quality` | no | echoed back as the model's own pick regardless of what is sent |
-| `model` | no | a nonexistent model name returns HTTP 200 |
+| `model` (on the tool) | no | a nonexistent model name returns HTTP 200 |
+| `model` (top-level) | **yes** | unknown names are rejected with HTTP 400 |
 | `partial_images` | no | `0` and `3` both yield exactly one partial event |
 | `moderation` | accepted | no measurable effect |
 | `background` | rejected | `transparent` returns HTTP 400 — see below |
@@ -114,19 +120,88 @@ that area:
 | 9:16 | 941x1672 | 1,573,352 | 100.03% |
 | 1:2 | 887x1774 | 1,573,538 | 100.04% |
 
+Ratios hold precisely right up to a wall at 3:1, which is exactly the documented
+gpt-image-2 limit on longest-to-shortest edge:
+
+| Requested | Delivered | Error |
+|---|---|---|
+| 4:5, 1:1, 5:4, 4:3, 3:2, 16:9, 2:1 | on the nose | 0.0–0.1% |
+| 21:9 (2.33) | 1915x821 | 0.0% |
+| 12:5 (2.40) | 1942x809 | 0.0% |
+| 5:2 (2.50) | 1983x793 | 0.0% |
+| 11:4 (2.75) | 2079x756 | 0.0% |
+| 1:3 (0.333) | 736x2135 | 3.4% |
+| 3:1 | 1881x836 (2.25) | **25%** |
+| 4:1 | 1983x793 (2.50) | **37%** |
+| 1:4 | 793x1983 (0.40) | **60%** |
+
+`cxi` refuses anything past 3:1 rather than returning a different shape in
+silence, and warns whenever the delivered ratio drifts more than 5% from the
+request.
+
 Consequences worth knowing before promising anything:
 
-- **The aspect ratio is reliable.** Any ratio works, including ones absent from
-  the official size menu (21:9, 2:1, 5:4). Worst observed error was 0.1%.
-- **2K and 4K are unreachable.** The official menu lists 2560x1440 (3.7 MP) and
-  3840x2160 (8.3 MP); this path caps out at 1.57 MP. Asking for "4K ultra HD"
-  changes the ratio to 16:9 and nothing else.
+- **The aspect ratio is reliable within 3:1.** Any ratio in range works,
+  including ones absent from the official size menu (21:9, 5:2, 11:4, 5:4).
+- **2K and 4K are unreachable *on this path*.** They exist, but only through the
+  OpenAI Images API with an `OPENAI_API_KEY`, which is billed separately — see
+  "The other path" below. Asking for "4K ultra HD" here changes the ratio to 16:9
+  and nothing else.
 - **Quality does not scale resolution.** Sending `quality: high`, or asking for
   it in the prompt, leaves the area at 100.0% and the echoed quality at `low`.
   File size moves (853KB–1410KB) but that is compression, not pixels.
 - **Exact pixel counts are not on offer.** Two requests happened to land on
   1536x1024 and 1024x1536 exactly, because those *are* the native area at those
   ratios. Nothing else will.
+
+### The sibling `/images/*` endpoints
+
+The Codex backend also exposes `images/generations` and `images/edits`, reachable
+with the same ChatGPT session and shaped like the public Images API
+(`{prompt, model, size, quality, background, n}`, replies carrying
+`data[].b64_json`). `images/edits` genuinely edits — hand it a reference and the
+shape, linework, and composition survive while the requested change lands.
+
+They are not worth switching to. Measured on the same fixed prompt, they honor
+*less* than `/responses` does and fail silently instead of loudly:
+
+| Field | `/responses` | `/images/generations` |
+|---|---|---|
+| `output_format` | **honored** | ignored — `webp` returns PNG |
+| `size` | ignored | ignored — `2048x2048` returns 1254x1254 |
+| `quality` | ignored | ignored |
+| `background` | HTTP 400 | HTTP 200, then ignored |
+| `n` | — | ignored — `n: 2` returns one image |
+| Resolution | ~1.57 MP | ~1.57 MP |
+
+Beware the trap that `background` sets here: on an isolated-subject prompt the
+result *is* transparent, which looks like the parameter working. It is not —
+sending `background: "auto"` on that same prompt is equally transparent, and
+sending `background: "transparent"` on a scene prompt comes back opaque. The
+prompt is doing the work on both endpoints.
+
+### The other path
+
+Codex ships an official image skill at
+`$CODEX_HOME/skills/.system/imagegen/`, and its docs explain why the tool fields
+above are inert: they are *"fallback-only execution controls. Do not assume they
+are built-in `image_gen` tool arguments."* There are two separate surfaces:
+
+| | Built-in tool (what `cxi` uses) | OpenAI Images API |
+|---|---|---|
+| Auth | the local ChatGPT session | `OPENAI_API_KEY`, billed separately |
+| Endpoint | `/backend-api/codex/responses` | `POST /v1/images/generations` |
+| size / quality | not arguments; prompt only | real parameters |
+| Resolution | fixed ~1.57 MP | 655,360–8,294,400 px, so 2K and 4K |
+| Transparency | **works, via the prompt** | `gpt-image-2` refuses it; needs `gpt-image-1.5` |
+
+Worth noting the last row: the built-in path is the *better* one for transparency.
+Codex's own fallback CLI hard-stops before the network on
+`--model gpt-image-2 --background transparent`, telling you to drop to
+`gpt-image-1.5`. Through the prompt, `gpt-image-2-codex` simply returns alpha.
+
+If you need true 2K/4K, that is the API path with your own key — this tool does
+not wrap it.
 
 ### Transparency
 
@@ -142,6 +217,13 @@ invalid_value — Transparent background is not supported for this model.
 That rejection is about the tool-config field, not the capability. `--transparent`
 asks through the prompt instead and produces genuine transparency (measured:
 99.9% transparent pixels, corner alpha 0).
+
+Native transparency is **new as of the 2026-08-25 skill update**, which is worth
+knowing before assuming it was always there. On this machine, 14 images generated
+by Codex itself between 2026-05-13 and 2026-08-18 are RGB with no alpha channel;
+the first RGBA output appears seven minutes after the skill was restamped. If a
+build predating that update is in play, expect opaque results and say so rather
+than promising a cutout.
 
 ### Declined prompts
 
@@ -202,12 +284,21 @@ npm run smoke     # dry-run against local auth
 
 ## Compatibility
 
-Verified against codex-cli **0.149.1**: auth schema, the `/responses` endpoint,
-the `codex_cli_rs` originator, and the `codex exec` flags the fallback relies on
+Verified against codex-cli **0.149.1** and the imagegen skill stamped
+**2026-08-25 08:53 KST**: auth schema, the `/responses` endpoint, the
+`codex_cli_rs` originator, and the `codex exec` flags the fallback relies on
 (`--ephemeral`, `--skip-git-repo-check`, `-s/--sandbox`, `-o/--output-last-message`)
-are all current. The inert tool fields documented above were measured against the
-same version — re-check them after a Codex upgrade, since a later build may start
-honoring `size` for real, or lift the 1.57 MP ceiling.
+are all current.
+
+Re-check the measured behavior after **either** moves — and they move separately.
+Transparency arrived with a skill update, not a CLI release, so a CLI version
+match alone proves nothing. A later build may start honoring `size` for real or
+lift the 1.57 MP ceiling. The quickest re-check:
+
+```bash
+cxi --prompt "a single red maple leaf icon, centered" --transparent --output /tmp/t.png
+# image.hasAlpha should be true; image.width * image.height should be ~1,572,864
+```
 
 ## License
 

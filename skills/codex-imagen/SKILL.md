@@ -38,8 +38,12 @@ cxi --prompt "Combine these two styles" --image ./a.png --image ./b.png --output
 cxi --prompt "a sunset over mountains" --size 16:9 --output ./sunset.png
 ```
 
-`--size` takes `WxH`, `W:H`, or `auto`. Any ratio works — `16:9`, `4:5`, `21:9`,
-`1024x1536`, whatever the user asks for.
+`--size` takes `WxH`, `W:H`, or `auto`. Any ratio **within 3:1** works — `16:9`,
+`4:5`, `21:9`, `11:4`, `1024x1536`, whatever the user asks for. Past 3:1 the
+image model cannot hold the shape, so `cxi` refuses the request instead of
+returning something different in silence; tell the user to pick a ratio within
+3:1 or to crop afterwards. If the delivered ratio drifts from the request, the
+output carries a warning — pass that on rather than ignoring it.
 
 **Resolution is fixed and cannot be raised.** Every image comes back at about
 1.57 megapixels (exactly the area of 1536x1024), reshaped to the requested ratio:
@@ -58,6 +62,9 @@ So:
 - **2K and 4K are not available through this tool.** If the user needs 2560x1440
   or 3840x2160, say so plainly rather than generating something smaller and
   calling it 4K. Asking for "4K" in the prompt only changes the ratio to 16:9.
+  Those resolutions do exist, but only via the OpenAI Images API with the user's
+  own `OPENAI_API_KEY` (billed separately) — mention that option rather than
+  implying 4K is impossible everywhere.
 - **There is no quality setting.** It is not exposed because it does nothing —
   neither a parameter nor prompt wording changes the resolution or the model's
   own quality pick.
@@ -80,8 +87,15 @@ transparency is needed. Match the `--output` extension to the format.
 cxi --prompt "a red maple leaf icon, centered" --transparent --output ./leaf.png
 ```
 
-Transparency works and produces a real alpha channel. Use `--transparent` for
-icons, logos, stickers, and cutouts. Check `image.hasAlpha` in the output to
+Transparency works and produces a real alpha channel — a capability that landed
+in Codex's bundled imagegen skill on 2026-08-25. Use `--transparent` for icons,
+logos, stickers, and cutouts.
+
+**Transparency survives generation, not editing.** Passing `--image` alongside
+`--transparent` returns an opaque result no matter how the prompt is worded. If
+the user wants a transparent variant of an existing image, regenerate it from a
+description rather than editing, and tell them why — do not hand back an opaque
+PNG as if it were a cutout. Check `image.hasAlpha` in the output to
 confirm it came back transparent — the model decides, so a scene-like prompt may
 still come back opaque. Keeping the subject singular and isolated
 ("a single X, centered, nothing else") makes transparency far more likely.

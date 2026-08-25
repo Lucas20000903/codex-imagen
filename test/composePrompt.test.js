@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { composePrompt, describeAspect, parseSize } from '../src/codex/composePrompt.js';
+import { aspectExtremity, composePrompt, describeAspect, parseSize } from '../src/codex/composePrompt.js';
 
 test('parses both WxH and W:H, and treats auto as no hint', () => {
   assert.deepEqual(parseSize('1536x1024'), { width: 1536, height: 1024 });
@@ -41,4 +41,10 @@ test('folds aspect and transparency into the prompt', () => {
   const both = composePrompt({ prompt: 'a red leaf', size: '1024x1024', transparent: true });
   assert.match(both, /square 1:1/);
   assert.match(both, /transparent background/);
+});
+
+test('measures the longest-to-shortest edge ratio', () => {
+  assert.equal(aspectExtremity({ width: 1024, height: 1024 }), 1);
+  assert.equal(aspectExtremity({ width: 16, height: 9 }), 16 / 9);
+  assert.equal(aspectExtremity({ width: 9, height: 16 }), 16 / 9);
 });

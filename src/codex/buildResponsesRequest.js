@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-import { composePrompt, parseSize } from './composePrompt.js';
+import { aspectExtremity, composePrompt, MAX_ASPECT_RATIO, parseSize } from './composePrompt.js';
 
 export const REDACTED_ACCOUNT_ID = '[REDACTED_ACCOUNT_ID]';
 export const REDACTED_SESSION_ID = '[REDACTED_SESSION_ID]';
@@ -113,10 +113,18 @@ export function buildResponsesRequest({
   if (!prompt || !prompt.trim()) {
     throw invalidRequest('MISSING_PROMPT', 'Prompt is required.');
   }
-  if (size !== undefined && parseSize(size) === undefined) {
+  const parsedSize = size === undefined ? null : parseSize(size);
+  if (parsedSize === undefined) {
     throw invalidRequest(
       'UNPARSEABLE_IMAGE_SIZE',
       `Cannot read an aspect ratio from "${size}". Use WxH, W:H, or auto — for example 1536x1024, 16:9, or auto.`
+    );
+  }
+  if (parsedSize && aspectExtremity(parsedSize) > MAX_ASPECT_RATIO) {
+    throw invalidRequest(
+      'ASPECT_RATIO_TOO_EXTREME',
+      `${size} is ${aspectExtremity(parsedSize).toFixed(2)}:1, past the ${MAX_ASPECT_RATIO}:1 limit the image model can hold. ` +
+        'Asking anyway returns a different shape without saying so. Use a ratio within 3:1, or crop afterwards.'
     );
   }
   if (!SUPPORTED_OUTPUT_FORMATS.has(outputFormat)) {

@@ -8,6 +8,7 @@ import {
   sanitizeHeaders,
   sanitizeRequestBody
 } from '../codex/buildResponsesRequest.js';
+import { ASPECT_TOLERANCE, parseSize } from '../codex/composePrompt.js';
 import { extractImageGeneration } from '../codex/extractImageGeneration.js';
 import { parseSseText } from '../codex/streamResponsesSse.js';
 import { saveImage } from '../fs/saveImage.js';
@@ -259,6 +260,22 @@ export function createCodexHttpProvider(config) {
       const saved = await saveImage({ resultBase64: generation.resultBase64, outputPath });
 
       const warnings = [...validation.warnings];
+
+      // The ratio rides on the prompt, so the model can quietly land somewhere
+      // else. Say so rather than letting the caller assume the request stuck.
+      const requested = size ? parseSize(size) : null;
+      if (requested && saved.width && saved.height) {
+        const wanted = requested.width / requested.height;
+        const delivered = saved.width / saved.height;
+        const drift = Math.abs(delivered - wanted) / wanted;
+        if (drift > ASPECT_TOLERANCE) {
+          warnings.push(
+            `Asked for ${size} (${wanted.toFixed(3)}) but got ${saved.width}x${saved.height} (${delivered.toFixed(3)}), ` +
+              `off by ${(drift * 100).toFixed(0)}%. The model chooses the final shape; the prompt only steers it.`
+          );
+        }
+      }
+
       if (generation.partial) {
         warnings.push('The final image item was missing; saved the last partial frame instead, which may be lower quality.');
       }

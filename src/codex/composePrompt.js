@@ -16,6 +16,16 @@
  */
 export const FIXED_PIXEL_AREA = 1536 * 1024;
 
+/**
+ * Longest-to-shortest edge ratio the image model can hold. Matches the documented
+ * gpt-image-2 constraint, and measurement agrees: up to 2.75:1 lands at 0.0%
+ * error, 3:1 wobbles, and 4:1 comes back at 2.5:1.
+ */
+export const MAX_ASPECT_RATIO = 3;
+
+/** How far the delivered ratio may drift before it is worth telling the caller. */
+export const ASPECT_TOLERANCE = 0.05;
+
 /** Reduced ratios small enough to name directly, e.g. "16:9" rather than "1.78:1". */
 const MAX_NAMED_RATIO_TERM = 32;
 
@@ -45,6 +55,16 @@ export function parseSize(value) {
   const width = Number(match[1]);
   const height = Number(match[2]);
   return width > 0 && height > 0 ? { width, height } : undefined;
+}
+
+/**
+ * Longest-to-shortest edge ratio for a size.
+ *
+ * @param {{ width: number, height: number }} size
+ * @returns {number}
+ */
+export function aspectExtremity({ width, height }) {
+  return Math.max(width, height) / Math.min(width, height);
 }
 
 /**

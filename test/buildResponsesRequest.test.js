@@ -10,9 +10,23 @@ test('rejects an empty prompt', () => {
   assert.throws(() => buildResponsesRequest({ ...base, prompt: '   ' }), /Prompt is required/);
 });
 
-test('accepts any parseable aspect, including ratios off the official list', () => {
-  for (const size of ['800x600', '21:9', '2560x1440']) {
+test('accepts any parseable aspect within reach, including ratios off the official list', () => {
+  for (const size of ['800x600', '21:9', '2560x1440', '11:4', '1:2.75'.replace('.75', ''), '5:2']) {
     assert.doesNotThrow(() => buildResponsesRequest({ ...base, prompt: 'x', size }), size);
+  }
+});
+
+test('rejects a ratio past what the image model can hold', () => {
+  for (const size of ['4:1', '1:4', '3840x960']) {
+    assert.throws(
+      () => buildResponsesRequest({ ...base, prompt: 'x', size }),
+      (error) => {
+        assert.equal(error.code, 'ASPECT_RATIO_TOO_EXTREME');
+        assert.match(error.message, /3:1 limit/);
+        return true;
+      },
+      size
+    );
   }
 });
 
@@ -80,6 +94,7 @@ test('request-shape errors carry a code so the CLI can print one line', () => {
   for (const [args, code] of [
     [{ prompt: '' }, 'MISSING_PROMPT'],
     [{ prompt: 'x', size: 'huge' }, 'UNPARSEABLE_IMAGE_SIZE'],
+    [{ prompt: 'x', size: '5:1' }, 'ASPECT_RATIO_TOO_EXTREME'],
     [{ prompt: 'x', outputFormat: 'tiff' }, 'UNSUPPORTED_OUTPUT_FORMAT'],
     [{ prompt: 'x', toolOptions: { input_fidelity: 'high' } }, 'UNSUPPORTED_TOOL_OPTION']
   ]) {

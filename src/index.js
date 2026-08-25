@@ -10,7 +10,15 @@ export {
   sanitizeHeaders,
   sanitizeRequestBody
 } from './codex/buildResponsesRequest.js';
-export { composePrompt, describeAspect, parseSize, FIXED_PIXEL_AREA } from './codex/composePrompt.js';
+export {
+  composePrompt,
+  describeAspect,
+  aspectExtremity,
+  parseSize,
+  FIXED_PIXEL_AREA,
+  MAX_ASPECT_RATIO,
+  ASPECT_TOLERANCE
+} from './codex/composePrompt.js';
 export { parseSseText, summarizeEvents } from './codex/streamResponsesSse.js';
 export { extractImageGeneration } from './codex/extractImageGeneration.js';
 export { saveImage, describeImage } from './fs/saveImage.js';
