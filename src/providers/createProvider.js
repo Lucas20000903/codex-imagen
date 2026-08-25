@@ -5,6 +5,9 @@ import { AUTO_PROVIDER, CODEX_CLI_PROVIDER, CODEX_HTTP_PROVIDER } from './provid
 /** Options the codex-cli fallback cannot honor, so auto must not silently drop them. */
 const HTTP_ONLY_OPTIONS = ['size', 'transparent', 'images'];
 
+/** png is what the codex-cli fallback recovers, so only other formats block it. */
+const NON_PNG = (value) => Boolean(value) && value !== 'png';
+
 /**
  * Create the configured provider implementation.
  *
@@ -37,6 +40,9 @@ export function createProvider(config) {
               const value = args?.[key];
               return Array.isArray(value) ? value.length > 0 : Boolean(value);
             });
+            if (NON_PNG(args?.outputFormat)) {
+              blocked.push('outputFormat');
+            }
             if (blocked.length > 0) {
               const error = new Error(
                 `Auto cannot fall back to codex-cli because it cannot honor: ${blocked.join(', ')}.`

@@ -141,7 +141,7 @@ async function writeDebugArtifacts({ debugDir, payload }) {
  */
 export function createCodexCliProvider(config) {
   return {
-    async generateImage({ prompt, model, outputPath, debug = false, debugDir, execImpl = runCommand, images, size, transparent }) {
+    async generateImage({ prompt, model, outputPath, debug = false, debugDir, execImpl = runCommand, images, size, transparent, outputFormat }) {
       if (images && images.length > 0) {
         throw new Error('The codex-cli provider does not support reference images.');
       }
@@ -150,6 +150,9 @@ export function createCodexCliProvider(config) {
       }
       if (transparent) {
         throw new Error('The codex-cli provider cannot request a transparent background.');
+      }
+      if (outputFormat && outputFormat !== 'png') {
+        throw new Error('The codex-cli provider only recovers PNG files.');
       }
       if (!prompt || !prompt.trim()) {
         throw new Error('Prompt is required.');

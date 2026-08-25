@@ -32,21 +32,47 @@ cxi --prompt "Make this cat wear a hat" --image ./cat.png --output ./cat-hat.png
 cxi --prompt "Combine these two styles" --image ./a.png --image ./b.png --output ./combined.png
 ```
 
-## Aspect ratio
+## Aspect ratio and resolution
 
 ```bash
-cxi --prompt "a sunset over mountains" --size 2048x1152 --output ./sunset.png
+cxi --prompt "a sunset over mountains" --size 16:9 --output ./sunset.png
 ```
 
-`--size` accepts `auto`, `1024x1024`, `2048x2048` (square), `1536x1024`,
-`2048x1152`, `3840x2160` (landscape), `1024x1536`, `2160x3840` (portrait).
+`--size` takes `WxH`, `W:H`, or `auto`. Any ratio works — `16:9`, `4:5`, `21:9`,
+`1024x1536`, whatever the user asks for.
 
-**It is an aspect-ratio hint, not a pixel guarantee.** The backend discards
-tool-level size entirely, so `cxi` folds the ratio into the prompt instead. You
-get the right shape and roughly the right scale — asking for `2160x3840` returns
-something like 941×1672, the same 9:16. The output JSON reports the delivered
-dimensions under `image`. **If the user needs exact pixels, generate and then
-resize or crop; do not promise exact dimensions from this tool alone.**
+**Resolution is fixed and cannot be raised.** Every image comes back at about
+1.57 megapixels (exactly the area of 1536x1024), reshaped to the requested ratio:
+
+| Asked for | Delivered |
+|---|---|
+| `1:1` | 1254x1254 |
+| `3:2` | 1536x1024 |
+| `16:9` | 1672x941 |
+| `9:16` | 941x1672 |
+| `21:9` | 1915x821 |
+
+So:
+
+- **Promise the ratio, never the pixel count.** Ratio accuracy is within 0.1%.
+- **2K and 4K are not available through this tool.** If the user needs 2560x1440
+  or 3840x2160, say so plainly rather than generating something smaller and
+  calling it 4K. Asking for "4K" in the prompt only changes the ratio to 16:9.
+- **There is no quality setting.** It is not exposed because it does nothing —
+  neither a parameter nor prompt wording changes the resolution or the model's
+  own quality pick.
+- Check `image.width` / `image.height` in the output for what actually arrived.
+
+## Output format
+
+```bash
+cxi --prompt "a bicycle" --format webp --output ./bike.webp
+```
+
+`--format` accepts `png` (default), `jpeg`, and `webp`, and it genuinely works —
+this is the one backend option that is honored. Use `jpeg` when file size matters
+(roughly 15x smaller than png for the same image) and `png` or `webp` when
+transparency is needed. Match the `--output` extension to the format.
 
 ## Transparent background
 
@@ -75,8 +101,8 @@ cxi --prompt "flat blue square icon" --dry-run
 
 ## What this backend cannot do
 
-- **No exact pixel dimensions.** See the aspect-ratio note above.
-- **No quality control.** The model picks it; there is no flag, and adding one
+- **No resolution above ~1.57 MP**, and no exact pixel dimensions. See above.
+- **No quality control.** The model picks it; there is no flag because a flag
   would do nothing.
 - **No `input_fidelity` control.** Describe in the prompt how closely to follow a
   reference image instead.

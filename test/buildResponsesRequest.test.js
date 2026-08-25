@@ -10,8 +10,23 @@ test('rejects an empty prompt', () => {
   assert.throws(() => buildResponsesRequest({ ...base, prompt: '   ' }), /Prompt is required/);
 });
 
-test('rejects a size that is not on the known list', () => {
-  assert.throws(() => buildResponsesRequest({ ...base, prompt: 'x', size: '800x600' }), /Unknown image size/);
+test('accepts any parseable aspect, including ratios off the official list', () => {
+  for (const size of ['800x600', '21:9', '2560x1440']) {
+    assert.doesNotThrow(() => buildResponsesRequest({ ...base, prompt: 'x', size }), size);
+  }
+});
+
+test('rejects a size it cannot read an aspect from', () => {
+  assert.throws(() => buildResponsesRequest({ ...base, prompt: 'x', size: 'huge' }), /Cannot read an aspect ratio/);
+});
+
+test('puts the output format on the tool, since the backend honors it', () => {
+  const { body } = buildResponsesRequest({ ...base, prompt: 'x', outputFormat: 'webp' });
+  assert.deepEqual(body.tools[0], { type: 'image_generation', output_format: 'webp' });
+});
+
+test('rejects an output format the backend does not produce', () => {
+  assert.throws(() => buildResponsesRequest({ ...base, prompt: 'x', outputFormat: 'tiff' }), /Unsupported output format/);
 });
 
 test('rejects tool options the Codex image model refuses', () => {
@@ -64,7 +79,8 @@ test('joins the responses path onto a base url without a trailing slash', () => 
 test('request-shape errors carry a code so the CLI can print one line', () => {
   for (const [args, code] of [
     [{ prompt: '' }, 'MISSING_PROMPT'],
-    [{ prompt: 'x', size: '800x600' }, 'UNSUPPORTED_IMAGE_SIZE'],
+    [{ prompt: 'x', size: 'huge' }, 'UNPARSEABLE_IMAGE_SIZE'],
+    [{ prompt: 'x', outputFormat: 'tiff' }, 'UNSUPPORTED_OUTPUT_FORMAT'],
     [{ prompt: 'x', toolOptions: { input_fidelity: 'high' } }, 'UNSUPPORTED_TOOL_OPTION']
   ]) {
     assert.throws(

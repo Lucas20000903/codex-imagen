@@ -1,11 +1,14 @@
 import crypto from 'node:crypto';
 
-import { composePrompt, SUPPORTED_IMAGE_SIZES } from './composePrompt.js';
+import { composePrompt, parseSize } from './composePrompt.js';
 
 export const REDACTED_ACCOUNT_ID = '[REDACTED_ACCOUNT_ID]';
 export const REDACTED_SESSION_ID = '[REDACTED_SESSION_ID]';
 export const REDACTED_INSTALLATION_ID = '[REDACTED_INSTALLATION_ID]';
 export const REDACTED_IMAGE_DATA = '[REDACTED_IMAGE_DATA]';
+
+/** Unlike size and quality, this tool field is genuinely honored by the backend. */
+export const SUPPORTED_OUTPUT_FORMATS = new Set(['png', 'jpeg', 'webp']);
 
 /**
  * Tool options the backend rejects for the image model Codex currently routes
@@ -104,15 +107,22 @@ export function buildResponsesRequest({
   images,
   size,
   transparent = false,
+  outputFormat = 'png',
   toolOptions
 }) {
   if (!prompt || !prompt.trim()) {
     throw invalidRequest('MISSING_PROMPT', 'Prompt is required.');
   }
-  if (size && !SUPPORTED_IMAGE_SIZES.has(size)) {
+  if (size !== undefined && parseSize(size) === undefined) {
     throw invalidRequest(
-      'UNSUPPORTED_IMAGE_SIZE',
-      `Unknown image size: ${size}. Known sizes: ${[...SUPPORTED_IMAGE_SIZES].join(', ')}.`
+      'UNPARSEABLE_IMAGE_SIZE',
+      `Cannot read an aspect ratio from "${size}". Use WxH, W:H, or auto — for example 1536x1024, 16:9, or auto.`
+    );
+  }
+  if (!SUPPORTED_OUTPUT_FORMATS.has(outputFormat)) {
+    throw invalidRequest(
+      'UNSUPPORTED_OUTPUT_FORMAT',
+      `Unsupported output format: ${outputFormat}. Supported: ${[...SUPPORTED_OUTPUT_FORMATS].join(', ')}.`
     );
   }
   for (const [key, reason] of Object.entries(REJECTED_TOOL_OPTIONS)) {
@@ -145,7 +155,7 @@ export function buildResponsesRequest({
     tools: [
       {
         type: 'image_generation',
-        output_format: 'png',
+        output_format: outputFormat,
         ...(toolOptions ?? {})
       }
     ],

@@ -1,33 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { composePrompt } from '../src/codex/composePrompt.js';
+import { composePrompt, describeAspect, parseSize } from '../src/codex/composePrompt.js';
 
-test('leaves a bare prompt alone', () => {
+test('parses both WxH and W:H, and treats auto as no hint', () => {
+  assert.deepEqual(parseSize('1536x1024'), { width: 1536, height: 1024 });
+  assert.deepEqual(parseSize('16:9'), { width: 16, height: 9 });
+  assert.equal(parseSize('auto'), null);
+  assert.equal(parseSize(undefined), null);
+});
+
+test('reports unparseable sizes as undefined rather than throwing', () => {
+  for (const bad of ['huge', '1024', '0x100', '1024xabc']) {
+    assert.equal(parseSize(bad), undefined, bad);
+  }
+});
+
+test('names common ratios in lowest terms', () => {
+  assert.match(describeAspect({ width: 1024, height: 1024 }), /square 1:1/);
+  assert.match(describeAspect({ width: 1536, height: 1024 }), /wide 3:2 landscape/);
+  assert.match(describeAspect({ width: 1024, height: 1536 }), /tall 2:3 portrait/);
+  assert.match(describeAspect({ width: 3840, height: 2160 }), /wide 16:9 landscape/);
+  assert.match(describeAspect({ width: 2560, height: 1440 }), /wide 16:9 landscape/);
+});
+
+test('calls ratios at or past 2:1 ultra-wide', () => {
+  assert.match(describeAspect({ width: 2, height: 1 }), /ultra-wide 2:1 landscape/);
+  assert.match(describeAspect({ width: 1, height: 2 }), /ultra-wide 1:2 portrait/);
+});
+
+test('falls back to a decimal ratio when lowest terms stay large', () => {
+  assert.match(describeAspect({ width: 1915, height: 821 }), /2\.33:1/);
+});
+
+test('folds aspect and transparency into the prompt', () => {
   assert.equal(composePrompt({ prompt: 'a red leaf' }), 'a red leaf');
-});
-
-test('folds a landscape size into an aspect instruction', () => {
-  assert.equal(
-    composePrompt({ prompt: 'a red leaf', size: '1536x1024' }),
-    'a red leaf Render it as a wide 3:2 landscape composition.'
-  );
-});
-
-test('folds a portrait size into an aspect instruction', () => {
-  assert.match(composePrompt({ prompt: 'a red leaf', size: '2160x3840' }), /tall 9:16 portrait/);
-});
-
-test('adds nothing for size auto', () => {
-  assert.equal(composePrompt({ prompt: 'a red leaf', size: 'auto' }), 'a red leaf');
-});
-
-test('asks for transparency explicitly', () => {
+  assert.match(composePrompt({ prompt: 'a red leaf', size: '16:9' }), /wide 16:9 landscape/);
   assert.match(composePrompt({ prompt: 'a red leaf', transparent: true }), /fully transparent background/);
-});
 
-test('combines size and transparency', () => {
-  const composed = composePrompt({ prompt: 'a red leaf', size: '1024x1024', transparent: true });
-  assert.match(composed, /square 1:1/);
-  assert.match(composed, /transparent background/);
+  const both = composePrompt({ prompt: 'a red leaf', size: '1024x1024', transparent: true });
+  assert.match(both, /square 1:1/);
+  assert.match(both, /transparent background/);
 });

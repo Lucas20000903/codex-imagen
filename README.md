@@ -45,8 +45,9 @@ cxi --prompt "Make this cat wear a hat" --image ./cat.png --output ./cat-hat.png
 Aspect ratio and transparency:
 
 ```bash
-cxi --prompt "a sunset over mountains" --size 2048x1152 --output ./sunset.png
+cxi --prompt "a sunset over mountains" --size 16:9 --output ./sunset.png
 cxi --prompt "a red maple leaf icon, centered" --transparent --output ./leaf.png
+cxi --prompt "a bicycle" --size 16:9 --format webp --output ./bike.webp
 ```
 
 Validate auth and print the request without calling the backend:
@@ -62,8 +63,9 @@ cxi --prompt "flat blue square icon" --dry-run
 | `--prompt <text>` | required |
 | `--output <path>` | output PNG path |
 | `--image <path>` | `png`, `jpg`/`jpeg`, `gif`, `webp` — repeatable |
-| `--size <value>` | aspect hint, **not** exact pixels — `auto`, `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, `2048x1152`, `3840x2160`, `2160x3840` |
+| `--size <value>` | aspect ratio as `WxH`, `W:H`, or `auto` — sets the shape, **not** the pixel count |
 | `--transparent` | ask for a transparent background |
+| `--format <name>` | `png` (default), `jpeg`, `webp` |
 | `--model <name>` | orchestrator model — default `gpt-5.6-sol`; also `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4` |
 | `--provider <name>` | `codex-http` (default), `codex-cli`, `auto` |
 | `--dry-run` / `--debug` / `--debug-dir <path>` | diagnostics |
@@ -74,50 +76,72 @@ Environment overrides: `CODEX_HOME`, `CODEX_IMAGEN_BASE_URL`, `CODEX_IMAGEN_AUTH
 
 ## How this backend actually behaves
 
-**The tool-level `size`, `quality`, and `model` fields do nothing.** The backend
-neither validates nor applies them — `size: "totally-bogus"` and a nonexistent
-model name both return HTTP 200. The orchestrator model reads the prompt, picks
-size, quality, and background itself, and echoes its choices back on the
-`image_generation_call` item.
+Measured against codex-cli 0.149.1. Of the options the public Images API exposes,
+this path honors almost none of them:
 
-Measured on codex-cli 0.149.1 with the same landscape prompt:
+| Tool field | Honored? | Evidence |
+|---|---|---|
+| `output_format` | **yes** | `png` 840KB, `jpeg` 59KB, `webp` 639KB — all valid files |
+| `size` | no | `size: "totally-bogus"` returns HTTP 200; the value is never applied |
+| `quality` | no | echoed back as the model's own pick regardless of what is sent |
+| `model` | no | a nonexistent model name returns HTTP 200 |
+| `partial_images` | no | `0` and `3` both yield exactly one partial event |
+| `moderation` | accepted | no measurable effect |
+| `background` | rejected | `transparent` returns HTTP 400 — see below |
+| `input_fidelity` | rejected | `gpt-image-2-codex` refuses the parameter |
 
-| Tool field sent | Delivered |
-|---|---|
-| *(nothing)* | 1536×1024 |
-| `size: 1024x1536` (portrait) | 1536×1024 — request ignored |
-| `size: 1024x1024` (square) | 1536×1024 — request ignored |
-| *(nothing)*, prompt says "tall 9:16" | 941×1672 — ratio 0.5628 vs 0.5625 |
-| *(nothing)*, prompt says "square 1:1" | 1254×1254 |
+The orchestrator model reads the prompt, picks size/quality/background itself,
+and echoes its choices on the `image_generation_call` item. So `--size` and
+`--transparent` are folded into the **prompt**; only `--format` rides on the tool.
 
-So `--size` and `--transparent` are folded into the **prompt** rather than the
-tool definition. Expect the right aspect ratio, not the exact pixel count — crop
-or resize afterwards if the dimensions must be exact. Every run reports what was
-actually delivered:
+### Resolution is fixed; only the shape changes
 
-```json
-"image": { "width": 941, "height": 1672, "hasAlpha": false },
-"requestedSize": "2160x3840",
-"backendSettings": { "size": "941x1672", "quality": "low", "background": "opaque" }
-```
+Every image comes back at **~1,572,864 pixels — exactly 1536x1024** — reshaped to
+whatever ratio the prompt asks for. Eleven measured ratios, all within 0.04% of
+that area:
+
+| Ratio | Delivered | Pixels | vs 1536x1024 |
+|---|---|---|---|
+| 1:1 | 1254x1254 | 1,572,516 | 99.98% |
+| 5:4 | 1402x1122 | 1,573,044 | 100.01% |
+| 4:3 | 1448x1086 | 1,572,528 | 99.98% |
+| 3:2 | 1536x1024 | 1,572,864 | 100.00% |
+| 16:9 | 1672x941 | 1,573,352 | 100.03% |
+| 2:1 | 1774x887 | 1,573,538 | 100.04% |
+| 21:9 | 1915x821 | 1,572,215 | 99.96% |
+| 3:4 | 1086x1448 | 1,572,528 | 99.98% |
+| 2:3 | 1024x1536 | 1,572,864 | 100.00% |
+| 9:16 | 941x1672 | 1,573,352 | 100.03% |
+| 1:2 | 887x1774 | 1,573,538 | 100.04% |
+
+Consequences worth knowing before promising anything:
+
+- **The aspect ratio is reliable.** Any ratio works, including ones absent from
+  the official size menu (21:9, 2:1, 5:4). Worst observed error was 0.1%.
+- **2K and 4K are unreachable.** The official menu lists 2560x1440 (3.7 MP) and
+  3840x2160 (8.3 MP); this path caps out at 1.57 MP. Asking for "4K ultra HD"
+  changes the ratio to 16:9 and nothing else.
+- **Quality does not scale resolution.** Sending `quality: high`, or asking for
+  it in the prompt, leaves the area at 100.0% and the echoed quality at `low`.
+  File size moves (853KB–1410KB) but that is compression, not pixels.
+- **Exact pixel counts are not on offer.** Two requests happened to land on
+  1536x1024 and 1024x1536 exactly, because those *are* the native area at those
+  ratios. Nothing else will.
 
 ### Transparency
 
 Transparency works — the model sets `background: "transparent"` on its own when
-the prompt asks for an isolated subject, and the PNG comes back RGBA. What the
-backend rejects is the literal `background` field on the tool definition:
+the prompt asks for an isolated subject, and the image comes back with an alpha
+channel. What the backend rejects is the literal `background` field on the tool
+definition:
 
 ```
 invalid_value — Transparent background is not supported for this model.
 ```
 
 That rejection is about the tool-config field, not the capability. `--transparent`
-asks through the prompt instead and produces a genuinely transparent PNG
-(measured: 99.9% transparent pixels, corner alpha 0).
-
-`input_fidelity` is likewise rejected on the tool definition
-(`The model 'gpt-image-2-codex' does not support the 'input_fidelity' parameter.`);
-describe reference adherence in the prompt instead.
+asks through the prompt instead and produces genuine transparency (measured:
+99.9% transparent pixels, corner alpha 0).
 
 ### Declined prompts
 
@@ -133,10 +157,10 @@ An empty turn with no text at all is reported separately as
 
 ## Providers
 
-| Provider | Reference images | Aspect hint | Transparency |
-|---|---|---|---|
-| `codex-http` (default) | ✅ | ✅ | ✅ |
-| `codex-cli` (`codex exec`, recovers the PNG from `~/.codex/generated_images/`) | ❌ | ❌ | ❌ |
+| Provider | Reference images | Aspect | Transparency | jpeg/webp |
+|---|---|---|---|---|
+| `codex-http` (default) | ✅ | ✅ | ✅ | ✅ |
+| `codex-cli` (`codex exec`, recovers the PNG from `~/.codex/generated_images/`) | ❌ | ❌ | ❌ | ❌ |
 | `auto` | falls back only when nothing would be silently dropped | | |
 
 `auto` will not fall back after a declined prompt — the fallback would be
@@ -152,7 +176,9 @@ const result = await createProvider(config).generateImage({
   prompt: 'flat blue square icon',
   model: config.defaultModel,
   outputPath: './out.png',
-  transparent: true
+  size: '16:9',
+  transparent: true,
+  outputFormat: 'webp'
 });
 
 console.log(result.savedPath, result.image, result.backendSettings);
@@ -181,7 +207,7 @@ the `codex_cli_rs` originator, and the `codex exec` flags the fallback relies on
 (`--ephemeral`, `--skip-git-repo-check`, `-s/--sandbox`, `-o/--output-last-message`)
 are all current. The inert tool fields documented above were measured against the
 same version — re-check them after a Codex upgrade, since a later build may start
-honoring `size` for real.
+honoring `size` for real, or lift the 1.57 MP ceiling.
 
 ## License
 

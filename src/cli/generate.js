@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { KNOWN_MODELS, resolveConfig, UNSUPPORTED_WARNING } from '../config.js';
-import { SUPPORTED_IMAGE_SIZES } from '../codex/composePrompt.js';
+import { FIXED_PIXEL_AREA } from '../codex/composePrompt.js';
+import { SUPPORTED_OUTPUT_FORMATS } from '../codex/buildResponsesRequest.js';
 import { createProvider } from '../providers/createProvider.js';
 import { SUPPORTED_PROVIDERS } from '../providers/providerTypes.js';
 
@@ -21,6 +22,7 @@ const VALUE_FLAGS = {
   '--output': 'output',
   '--model': 'model',
   '--size': 'size',
+  '--format': 'outputFormat',
   '--provider': 'provider',
   '--codex-home': 'codexHome',
   '--base-url': 'baseUrl',
@@ -120,11 +122,12 @@ Usage:
 
 Options:
   --prompt <text>               Required prompt text
-  --output <path>               Output PNG path
+  --output <path>               Output file path
   --image <path>                Reference image (repeat for multiple)
-  --size <value>                Aspect hint, NOT exact pixels — see below
-                                ${[...SUPPORTED_IMAGE_SIZES].join(', ')}
+  --size <value>                Aspect ratio as WxH, W:H, or auto (e.g. 1536x1024,
+                                16:9, 4:5). Sets the shape, NOT the pixel count.
   --transparent                 Ask for a transparent background
+  --format <name>               ${[...SUPPORTED_OUTPUT_FORMATS].join(' | ')} (default png)
   --model <name>                Orchestrator model (default: ${KNOWN_MODELS[0]})
                                 Known: ${KNOWN_MODELS.join(', ')}
   --provider <name>             ${SUPPORTED_PROVIDERS.join(' | ')}
@@ -138,9 +141,11 @@ Options:
   -h, --help                    Show help
   -v, --version                 Print the version and exit
 
-The backend ignores tool-level size/quality/model fields entirely, so --size and
---transparent are folded into the prompt instead. The model still picks the final
-dimensions; the JSON output reports what was actually delivered.
+Resolution is fixed: every image comes back at about ${(FIXED_PIXEL_AREA / 1e6).toFixed(2)} megapixels
+(${FIXED_PIXEL_AREA.toLocaleString()} px, exactly 1536x1024) reshaped to the ratio you ask for.
+2K and 4K are not reachable through this backend. The tool-level size and quality
+fields are ignored by it, so --size is folded into the prompt instead; --format is
+a real backend option. Every run reports the geometry actually delivered.
 `);
 }
 
@@ -170,6 +175,12 @@ async function main() {
 
   console.warn(UNSUPPORTED_WARNING);
 
+  const requestedFormat = args.outputFormat || 'png';
+  const outputExtension = path.extname(outputPath).toLowerCase().replace(/^\./, '');
+  if (outputExtension && EXT_TO_MIME[outputExtension] !== `image/${requestedFormat}`) {
+    console.warn(`warning: --format ${requestedFormat} but --output ends in .${outputExtension}; the file will hold ${requestedFormat} bytes.`);
+  }
+
   const result = await provider.generateImage({
     prompt: args.prompt,
     model: args.model || config.defaultModel,
@@ -183,7 +194,8 @@ async function main() {
         : null,
     images,
     ...(args.size ? { size: args.size } : {}),
-    ...(args.transparent ? { transparent: true } : {})
+    ...(args.transparent ? { transparent: true } : {}),
+    ...(args.outputFormat ? { outputFormat: args.outputFormat } : {})
   });
 
   if (result.mode === 'dry-run') {

@@ -158,7 +158,8 @@ export function createCodexHttpProvider(config) {
       fetchImpl = globalThis.fetch,
       images,
       size,
-      transparent
+      transparent,
+      outputFormat
     }) {
       const session = await loadCodexSession(config);
       const validation = validateCodexSession(session);
@@ -170,7 +171,8 @@ export function createCodexHttpProvider(config) {
         originator: config.defaultOriginator,
         images,
         size,
-        transparent
+        transparent,
+        outputFormat
       });
 
       if (dryRun) {
@@ -267,7 +269,7 @@ export function createCodexHttpProvider(config) {
         responseId: parsed.responseId,
         sessionId: request.sessionId,
         savedPath: saved.outputPath,
-        image: { width: saved.width, height: saved.height, hasAlpha: saved.hasAlpha },
+        image: { format: saved.format, width: saved.width, height: saved.height, hasAlpha: saved.hasAlpha },
         requestedSize: size ?? null,
         backendSettings: generation.settings,
         composedPrompt: request.composedPrompt,
