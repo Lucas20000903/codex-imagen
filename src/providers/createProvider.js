@@ -3,7 +3,7 @@ import { createCodexHttpProvider } from './codexHttpProvider.js';
 import { AUTO_PROVIDER, CODEX_CLI_PROVIDER, CODEX_HTTP_PROVIDER } from './providerTypes.js';
 
 /** Options the codex-cli fallback cannot honor, so auto must not silently drop them. */
-const HTTP_ONLY_OPTIONS = ['size', 'transparent', 'images'];
+const HTTP_ONLY_OPTIONS = ['size', 'transparent', 'images', 'imageModel'];
 
 /**
  * Which requested options the codex-cli fallback would silently drop. Falling
@@ -28,7 +28,7 @@ export function blockedFallbackOptions(args) {
 /**
  * Create the configured provider implementation.
  *
- * @param {{ provider: string, baseUrl?: string, authFile?: string, installationIdFile?: string, generatedImagesDir?: string, defaultOriginator?: string }} config
+ * @param {{ provider: string, baseUrl?: string, authFile?: string, installationIdFile?: string, generatedImagesDir?: string, defaultOriginator?: string, defaultImageModel?: string | null }} config
  * @returns {{ generateImage: (args: object) => Promise<object> }}
  */
 export function createProvider(config) {
@@ -43,8 +43,12 @@ export function createProvider(config) {
     case AUTO_PROVIDER:
       return {
         async generateImage(args) {
+          const effectiveArgs = {
+            ...args,
+            imageModel: args.imageModel === undefined ? config.defaultImageModel : args.imageModel
+          };
           try {
-            const result = await httpProvider.generateImage(args);
+            const result = await httpProvider.generateImage(effectiveArgs);
             return { ...result, provider: CODEX_HTTP_PROVIDER };
           } catch (httpError) {
             // A declined prompt is a verdict, not an outage — the fallback would
@@ -53,7 +57,7 @@ export function createProvider(config) {
               throw httpError;
             }
 
-            const blocked = blockedFallbackOptions(args);
+            const blocked = blockedFallbackOptions(effectiveArgs);
             if (blocked.length > 0) {
               const error = new Error(
                 `Auto cannot fall back to codex-cli because it cannot honor: ${blocked.join(', ')}.`
@@ -63,7 +67,7 @@ export function createProvider(config) {
               throw error;
             }
 
-            const cliResult = await cliProvider.generateImage(args);
+            const cliResult = await cliProvider.generateImage(effectiveArgs);
             return {
               ...cliResult,
               provider: CODEX_CLI_PROVIDER,

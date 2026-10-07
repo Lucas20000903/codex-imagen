@@ -22,6 +22,7 @@ const VALUE_FLAGS = {
   '--prompt': 'prompt',
   '--output': 'output',
   '--model': 'model',
+  '--image-model': 'imageModel',
   '--size': 'size',
   '--format': 'outputFormat',
   '--provider': 'provider',
@@ -66,6 +67,9 @@ function parseArgs(argv) {
       const value = argv[index + 1];
       if (value === undefined) {
         throw new Error(`${token} needs a value.`);
+      }
+      if (token === '--image-model' && (!value.trim() || value.startsWith('-'))) {
+        throw new Error('--image-model needs a model name, such as gpt-image-2.5-flare.');
       }
       parsed[VALUE_FLAGS[token]] = value;
       index += 1;
@@ -135,6 +139,9 @@ Options:
   --format <name>               ${[...SUPPORTED_OUTPUT_FORMATS].join(' | ')} (default png)
   --model <name>                Orchestrator model (default: ${KNOWN_MODELS[0]})
                                 Known: ${KNOWN_MODELS.join(', ')}
+  --image-model <name>           Image model (codex-http only), e.g.
+                                gpt-image-2.5-flare or gpt-image-2.5-sunburst
+                                Default: CODEX_IMAGEN_IMAGE_MODEL or backend choice
   --provider <name>             ${SUPPORTED_PROVIDERS.join(' | ')}
   --retries <n>                 Retry transient failures (default ${DEFAULT_RETRIES}, max ${MAX_RETRIES})
   --no-retry                    Do not retry at all
@@ -150,11 +157,11 @@ Options:
   -h, --help                    Show help
   -v, --version                 Print the version and exit
 
-Resolution is fixed: every image comes back at about ${(FIXED_PIXEL_AREA / 1e6).toFixed(2)} megapixels
+The default image backend measured on 2026-08-25 returned about ${(FIXED_PIXEL_AREA / 1e6).toFixed(2)} megapixels
 (${FIXED_PIXEL_AREA.toLocaleString()} px, exactly 1536x1024) reshaped to the ratio you ask for.
-2K and 4K are not reachable through this backend. The tool-level size and quality
-fields are ignored by it, so --size is folded into the prompt instead; --format is
-a real backend option. Every run reports the geometry actually delivered.
+Those measurements do not establish the limits of Images 2.5. This CLI still
+steers --size through the prompt and has no resolution or quality control.
+Every run reports the geometry actually delivered.
 `);
 }
 
@@ -210,19 +217,20 @@ async function main() {
         console.warn(`codex-imagen: attempt ${attempt + 1}/${config.retries + 1}`);
       }
       return provider.generateImage({
-      prompt: args.prompt,
-      model: args.model || config.defaultModel,
-      outputPath,
-      dryRun: args.dryRun,
-      debug: args.debug,
-      debugDir: args.debugDir
-        ? path.resolve(args.debugDir)
-        : args.debug
-          ? path.resolve('.debug-codex-imagen')
-          : null,
-      images,
-      ...(args.size ? { size: args.size } : {}),
-      ...(args.transparent ? { transparent: true } : {}),
+        prompt: args.prompt,
+        model: args.model || config.defaultModel,
+        imageModel: args.imageModel ?? config.defaultImageModel ?? undefined,
+        outputPath,
+        dryRun: args.dryRun,
+        debug: args.debug,
+        debugDir: args.debugDir
+          ? path.resolve(args.debugDir)
+          : args.debug
+            ? path.resolve('.debug-codex-imagen')
+            : null,
+        images,
+        ...(args.size ? { size: args.size } : {}),
+        ...(args.transparent ? { transparent: true } : {}),
         ...(args.outputFormat ? { outputFormat: args.outputFormat } : {})
       });
     },
@@ -251,6 +259,7 @@ async function main() {
         savedPath: result.savedPath,
         image: result.image,
         requestedSize: result.requestedSize,
+        requestedImageModel: result.requestedImageModel ?? null,
         backendSettings: result.backendSettings,
         model: args.model || config.defaultModel,
         responseId: result.responseId,

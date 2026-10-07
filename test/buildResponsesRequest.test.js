@@ -39,6 +39,23 @@ test('puts the output format on the tool, since the backend honors it', () => {
   assert.deepEqual(body.tools[0], { type: 'image_generation', output_format: 'webp' });
 });
 
+test('selects the image model without changing the orchestrator or other tool options', () => {
+  for (const imageModel of ['gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+    const { body } = buildResponsesRequest({ ...base, prompt: 'x', imageModel, outputFormat: 'webp' });
+    assert.equal(body.model, base.model);
+    assert.deepEqual(body.tools[0], { type: 'image_generation', output_format: 'webp', model: imageModel });
+  }
+});
+
+test('rejects invalid image model values before sending a request', () => {
+  for (const imageModel of ['', '   ', '--dry-run', 25]) {
+    assert.throws(
+      () => buildResponsesRequest({ ...base, prompt: 'x', imageModel }),
+      (error) => error.code === 'INVALID_IMAGE_MODEL' && error.retryable === false
+    );
+  }
+});
+
 test('rejects an output format the backend does not produce', () => {
   assert.throws(() => buildResponsesRequest({ ...base, prompt: 'x', outputFormat: 'tiff' }), /Unsupported output format/);
 });

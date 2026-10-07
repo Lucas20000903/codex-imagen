@@ -11,6 +11,7 @@ test('returns the completed image item with the settings the backend chose', () 
         id: 'call_1',
         result: 'AAAA',
         revised_prompt: 'a leaf',
+        model: 'gpt-image-2.5-flare',
         size: '1254x1254',
         quality: 'medium',
         background: 'transparent'
@@ -22,7 +23,23 @@ test('returns the completed image item with the settings the backend chose', () 
   assert.equal(result.resultBase64, 'AAAA');
   assert.equal(result.revisedPrompt, 'a leaf');
   assert.equal(result.partial, false);
-  assert.deepEqual(result.settings, { size: '1254x1254', quality: 'medium', background: 'transparent' });
+  assert.deepEqual(result.settings, { model: 'gpt-image-2.5-flare', size: '1254x1254', quality: 'medium', background: 'transparent' });
+});
+
+test('leaves the model unknown when the backend does not report it', () => {
+  const result = extractImageGeneration([{ type: 'image_generation_call', result: 'AAAA' }]);
+  assert.equal(result.settings.model, null);
+});
+
+test('reads the image model from the response tools for SSE and JSON responses', () => {
+  const items = [{ type: 'image_generation_call', result: 'AAAA' }];
+  const tools = [{ type: 'image_generation', model: 'gpt-image-2-codex' }];
+  assert.equal(extractImageGeneration({ items, tools }).settings.model, 'gpt-image-2-codex');
+  const events = [
+    { data: { type: 'response.created', response: { tools: [{ type: 'image_generation', model: 'earlier' }] } } },
+    { data: { type: 'response.completed', response: { model: 'gpt-5.6-sol', tools } } }
+  ];
+  assert.equal(extractImageGeneration({ items, events }).settings.model, 'gpt-image-2-codex');
 });
 
 test('falls back to the last partial frame and flags it', () => {

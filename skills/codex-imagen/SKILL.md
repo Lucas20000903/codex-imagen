@@ -22,6 +22,30 @@ the `cxi` CLI.
 cxi --prompt "flat blue square icon" --output ./out.png
 ```
 
+## Image model selection
+
+```bash
+cxi --image-model gpt-image-2.5-flare --prompt "a blue leaf icon" --output ./flare.png
+cxi --image-model gpt-image-2.5-sunburst --prompt "a blue leaf icon" --output ./sunburst.png
+```
+
+`--image-model` selects the requested image model. `--model` is the separate
+orchestrator model. `CODEX_IMAGEN_IMAGE_MODEL` sets an image model default;
+the flag overrides it. If neither is set, the server chooses.
+
+**Verify the server's response before claiming Images 2.5 was used.** On
+2026-09-15, the server reported `gpt-image-2-codex` for an unspecified image model
+and for explicit `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst` requests.
+Both selections were also tested with `--model gpt-5.5`, with the same reported
+image model, including a minimal Flare prompt without transparency hints.
+The CLI forwards the requested model, but cannot force the server to honor it.
+
+Read `requestedImageModel` and `backendSettings.model` in the output. The latter
+comes from the response, not the request; `null` means the server did not report
+a model. Pass on any model mismatch warning. Model selection is supported by
+`codex-http`; `codex-cli` rejects it and `auto` refuses a fallback that would
+discard it.
+
 ## Reference images
 
 Pass `--image <path>` once per input image. Supported: `png`, `jpg`/`jpeg`,
@@ -33,6 +57,10 @@ cxi --prompt "Combine these two styles" --image ./a.png --image ./b.png --output
 ```
 
 ## Aspect ratio and resolution
+
+The pixel counts and limits below were measured on the default
+`gpt-image-2-codex` route in August 2026. They are not verified limits for Images
+2.5. This CLI still exposes aspect hints, not resolution or quality controls.
 
 ```bash
 cxi --prompt "a sunset over mountains" --size 16:9 --output ./sunset.png
@@ -91,25 +119,32 @@ Transparency works and produces a real alpha channel — a capability that lande
 in Codex's bundled imagegen skill on 2026-08-25. Use `--transparent` for icons,
 logos, stickers, and cutouts.
 
-**Transparency survives generation, not editing — the wording decides, not the
-flags.** `--transparent` works alongside `--image`; what kills the alpha channel
-is phrasing the request as an edit of the existing picture.
+**With a reference attached, the wording decides more than the flags.** On
+2026-08-25, with `--transparent` and a reference image:
 
 | Prompt shape | Transparent |
 |---|---|
 | "a single blue maple leaf icon, centered, nothing else, in the style of the reference" | 4 of 5 |
 | "change only the leaf colour to blue; keep the shape unchanged" | 0 of 7 |
 
-So when a cutout is wanted from a reference, describe the **result** and use the
-reference for style, rather than describing a change to the original. Reference
-images may be opaque; that does not stop the output from being transparent.
+**An edit can keep transparency when it asks to.** On 2026-09-15, a transparent
+blue maple leaf was supplied through `--image`, with `--transparent` and a prompt
+to change only its color while preserving the transparent background. The output
+was RGBA with alpha spanning 0–255 and 81.20% fully transparent pixels. The same
+color edit without `--transparent` or any background instruction returned
+**opaque RGB**. Creating a new green leaf in the reference's style with
+`--transparent` returned RGBA with 81.43% fully transparent pixels.
 
-It is not guaranteed either way, so check `image.hasAlpha` in the output. If it
-came back opaque, rephrase toward generation and try once more before telling
-the user it cannot be done. Check `image.hasAlpha` in the output to
-confirm it came back transparent — the model decides, so a scene-like prompt may
-still come back opaque. Keeping the subject singular and isolated
-("a single X, centered, nothing else") makes transparency far more likely.
+Each 2026-09-15 condition was tested once, so these results are not guarantees. When a
+transparent result is wanted, pass `--transparent` and explicitly ask to preserve
+the transparent background. Do not assume a reference's alpha carries over.
+For a new cutout based on a reference, describe a single isolated subject and use
+the reference for style. If the result is opaque, rephrase toward generation and
+retry once.
+
+`image.hasAlpha` confirms an alpha channel exists; it does not prove any pixels
+are transparent. Inspect the PNG's alpha values when transparency matters:
+there must be some values below 255. A fully opaque RGBA image is not a cutout.
 
 ## Dry run
 

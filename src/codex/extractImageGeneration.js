@@ -1,8 +1,12 @@
 function normalizeSource(source) {
   if (Array.isArray(source)) {
-    return { items: source, events: [] };
+    return { items: source, events: [], tools: [] };
   }
-  return { items: source?.items ?? [], events: source?.events ?? [] };
+  const events = source?.events ?? [];
+  const tools = source?.tools ?? [...events].reverse().find((event) =>
+    Array.isArray(event?.data?.response?.tools)
+  )?.data.response.tools ?? [];
+  return { items: source?.items ?? [], events, tools };
 }
 
 /**
@@ -34,11 +38,12 @@ function extractAssistantText(items) {
 /**
  * Extract the final image_generation_call output from parsed items or SSE events.
  *
- * @param {Array<unknown> | { items?: unknown[], events?: unknown[] }} source
+ * @param {Array<unknown> | { items?: unknown[], events?: unknown[], tools?: unknown[] }} source
  * @returns {{ callId: string | undefined, revisedPrompt: string | null, resultBase64: string, partial: boolean, item: unknown }}
  */
 export function extractImageGeneration(source) {
-  const { items, events } = normalizeSource(source);
+  const { items, events, tools } = normalizeSource(source);
+  const reportedModel = tools.find((tool) => tool?.type === 'image_generation')?.model ?? null;
 
   const imageItem = [...items]
     .reverse()
@@ -50,9 +55,9 @@ export function extractImageGeneration(source) {
       revisedPrompt: imageItem.revised_prompt ?? null,
       resultBase64: imageItem.result,
       partial: false,
-      // What the model actually chose, which is the only authority here — the
-      // values sent on the tool definition are discarded by the backend.
+      // Values reported by the backend, separate from the requested options.
       settings: {
+        model: imageItem.model ?? reportedModel,
         size: imageItem.size ?? null,
         quality: imageItem.quality ?? null,
         background: imageItem.background ?? null
@@ -75,7 +80,7 @@ export function extractImageGeneration(source) {
       revisedPrompt: partialImageEvent.data.revised_prompt ?? null,
       resultBase64: partialImageEvent.data.partial_image_b64,
       partial: true,
-      settings: { size: null, quality: null, background: null },
+      settings: { model: reportedModel, size: null, quality: null, background: null },
       item: {
         type: 'image_generation_call',
         id: partialImageEvent.data.item_id,

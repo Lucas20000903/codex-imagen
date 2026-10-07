@@ -93,7 +93,7 @@ export function sanitizeRequestBody(body) {
 /**
  * Build the Codex `/responses` request payload for an image generation turn.
  *
- * @param {{ baseUrl: string, session: { accessToken: string, accountId: string, installationId?: string | null }, prompt: string, model: string, originator: string, includeReasoning?: boolean, sessionId?: string, images?: string[], size?: string, quality?: string, imageModel?: string, toolOptions?: Record<string, unknown> }} options
+ * @param {{ baseUrl: string, session: { accessToken: string, accountId: string, installationId?: string | null }, prompt: string, model: string, originator: string, includeReasoning?: boolean, sessionId?: string, images?: string[], size?: string, transparent?: boolean, outputFormat?: string, imageModel?: string, toolOptions?: Record<string, unknown> }} options
  * @returns {{ url: string, sessionId: string, headers: Record<string, string>, body: Record<string, unknown>, sanitized: { url: string, headers: Record<string, string>, body: Record<string, unknown> } }}
  */
 export function buildResponsesRequest({
@@ -108,10 +108,14 @@ export function buildResponsesRequest({
   size,
   transparent = false,
   outputFormat = 'png',
+  imageModel,
   toolOptions
 }) {
   if (!prompt || !prompt.trim()) {
     throw invalidRequest('MISSING_PROMPT', 'Prompt is required.');
+  }
+  if (imageModel != null && (typeof imageModel !== 'string' || !imageModel.trim() || imageModel.startsWith('-'))) {
+    throw invalidRequest('INVALID_IMAGE_MODEL', 'Image model must be a non-empty model name, such as gpt-image-2.5-flare.');
   }
   const parsedSize = size === undefined ? null : parseSize(size);
   if (parsedSize === undefined) {
@@ -164,7 +168,8 @@ export function buildResponsesRequest({
       {
         type: 'image_generation',
         output_format: outputFormat,
-        ...(toolOptions ?? {})
+        ...(toolOptions ?? {}),
+        ...(imageModel ? { model: imageModel } : {})
       }
     ],
     tool_choice: 'auto',

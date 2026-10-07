@@ -176,7 +176,7 @@ async function loadFreshSession(config, { force = false, notes = [] } = {}) {
 /**
  * Create a provider that talks directly to the Codex HTTP backend.
  *
- * @param {{ baseUrl: string, authFile: string, installationIdFile: string, defaultOriginator: string, refresh?: boolean, refreshUrl?: string }} config
+ * @param {{ baseUrl: string, authFile: string, installationIdFile: string, defaultOriginator: string, defaultImageModel?: string | null, refresh?: boolean, refreshUrl?: string }} config
  * @returns {{ generateImage: (args: object) => Promise<object> }}
  */
 export function createCodexHttpProvider(config) {
@@ -184,6 +184,7 @@ export function createCodexHttpProvider(config) {
     async generateImage({
       prompt,
       model,
+      imageModel = config.defaultImageModel ?? undefined,
       outputPath,
       dryRun = false,
       debug = false,
@@ -202,6 +203,7 @@ export function createCodexHttpProvider(config) {
         session,
         prompt,
         model,
+        imageModel,
         originator: config.defaultOriginator,
         images,
         size,
@@ -244,6 +246,7 @@ export function createCodexHttpProvider(config) {
           session,
           prompt,
           model,
+          imageModel,
           originator: config.defaultOriginator,
           sessionId: request.sessionId,
           images,
@@ -285,6 +288,7 @@ export function createCodexHttpProvider(config) {
           parsed = {
             events: [],
             items: Array.isArray(payload?.output) ? payload.output : [],
+            tools: Array.isArray(payload?.tools) ? payload.tools : [],
             responseId: payload?.id ?? null
           };
         }
@@ -316,6 +320,9 @@ export function createCodexHttpProvider(config) {
       const saved = await saveImage({ resultBase64: generation.resultBase64, outputPath });
 
       const warnings = [...validation.warnings, ...authNotes];
+      if (imageModel && generation.settings.model && generation.settings.model !== imageModel) {
+        warnings.push(`Requested image model ${imageModel}, but the backend reported ${generation.settings.model}.`);
+      }
 
       // The ratio rides on the prompt, so the model can quietly land somewhere
       // else. Say so rather than letting the caller assume the request stuck.
@@ -344,6 +351,7 @@ export function createCodexHttpProvider(config) {
         savedPath: saved.outputPath,
         image: { format: saved.format, width: saved.width, height: saved.height, hasAlpha: saved.hasAlpha },
         requestedSize: size ?? null,
+        requestedImageModel: imageModel ?? null,
         backendSettings: generation.settings,
         composedPrompt: request.composedPrompt,
         revisedPrompt: generation.revisedPrompt,

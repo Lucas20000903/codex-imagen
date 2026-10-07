@@ -19,8 +19,8 @@ export const KNOWN_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gp
 /**
  * Resolve the runtime configuration for the CLI/library.
  *
- * @param {{ codexHome?: string, baseUrl?: string, authFile?: string, installationIdFile?: string, generatedImagesDir?: string, provider?: string, defaultModel?: string, originator?: string, defaultOutputPath?: string }} [overrides={}]
- * @returns {{ baseUrl: string, codexHome: string, authFile: string, installationIdFile: string, generatedImagesDir: string, provider: string, defaultModel: string, defaultOriginator: string, defaultOutputPath: string }}
+ * @param {{ codexHome?: string, baseUrl?: string, authFile?: string, installationIdFile?: string, generatedImagesDir?: string, provider?: string, defaultModel?: string, defaultImageModel?: string, originator?: string, defaultOutputPath?: string }} [overrides={}]
+ * @returns {{ baseUrl: string, codexHome: string, authFile: string, installationIdFile: string, generatedImagesDir: string, provider: string, defaultModel: string, defaultImageModel: string | null, defaultOriginator: string, defaultOutputPath: string }}
  */
 export function resolveConfig(overrides = {}) {
   const codexHome = overrides.codexHome || process.env.CODEX_HOME || DEFAULT_CODEX_HOME;
@@ -39,6 +39,7 @@ export function resolveConfig(overrides = {}) {
       path.join(codexHome, 'generated_images'),
     provider: overrides.provider || process.env.CODEX_IMAGEN_PROVIDER || CODEX_HTTP_PROVIDER,
     defaultModel: overrides.defaultModel || process.env.CODEX_IMAGEN_MODEL || process.env.CODEX_MODEL || KNOWN_MODELS[0],
+    defaultImageModel: overrides.defaultImageModel || process.env.CODEX_IMAGEN_IMAGE_MODEL || null,
     defaultOriginator: overrides.originator || process.env.CODEX_IMAGEN_ORIGINATOR || 'codex_cli_rs',
     refresh: overrides.refresh !== false,
     refreshUrl:

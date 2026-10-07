@@ -136,12 +136,21 @@ async function writeDebugArtifacts({ debugDir, payload }) {
 /**
  * Create a provider that drives `codex exec` and recovers the PNG it wrote.
  *
- * @param {{ generatedImagesDir: string }} config
+ * @param {{ generatedImagesDir: string, defaultImageModel?: string | null }} config
  * @returns {{ generateImage: (args: object) => Promise<object> }}
  */
 export function createCodexCliProvider(config) {
   return {
-    async generateImage({ prompt, model, outputPath, debug = false, debugDir, execImpl = runCommand, images, size, transparent, outputFormat }) {
+    async generateImage({
+      prompt, model, imageModel = config.defaultImageModel, outputPath,
+      debug = false, debugDir, execImpl = runCommand, images, size, transparent, outputFormat
+    }) {
+      if (imageModel) {
+        const error = new Error('The codex-cli provider does not support image model selection. Use codex-http.');
+        error.code = 'UNSUPPORTED_IMAGE_MODEL_SELECTION';
+        error.retryable = false;
+        throw error;
+      }
       if (images && images.length > 0) {
         throw new Error('The codex-cli provider does not support reference images.');
       }

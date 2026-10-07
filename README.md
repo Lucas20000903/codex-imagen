@@ -36,6 +36,40 @@ cxi --version
 cxi --prompt "flat blue square icon" --output ./out.png
 ```
 
+### Image model selection
+
+Request an image model separately from the orchestrator (`--model`):
+
+```bash
+cxi --image-model gpt-image-2.5-flare --prompt "a blue leaf icon" --output ./flare.png
+cxi --image-model gpt-image-2.5-sunburst --prompt "a blue leaf icon" --output ./sunburst.png
+```
+
+This forwards `model` on the `image_generation` tool.
+`CODEX_IMAGEN_IMAGE_MODEL` sets the default; `--image-model` overrides it.
+Omitting both keeps the server's default choice.
+
+**Requesting a model does not prove the server used it.** On 2026-09-15, the
+default request returned `gpt-image-2-codex` in `response.tools[0].model`.
+Explicit `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst` requests also returned
+`gpt-image-2-codex`, including runs of both models with orchestrator `gpt-5.5`.
+The CLI now reports `requestedImageModel` separately from
+`backendSettings.model`, and warns when they differ. If the response does not
+identify the image model, `backendSettings.model` is `null`.
+
+These runs verify client-side forwarding, but do not confirm that this server
+uses Images 2.5. See the [live verification record](docs/verification-2026-09-15.md).
+
+A separate [latency comparison](docs/flare-sunburst-benchmark-2026-09-15.md)
+used the same prompt and `gpt-5.5`, with three sequential runs per selection.
+Flare averaged 30.03s and Sunburst 27.86s; medians were 27.70s and 27.97s.
+These small samples did not demonstrate a consistent Flare speed advantage.
+
+Model selection requires `codex-http`. `codex-cli` rejects it, and `auto` will
+not fall back if that would discard the selection.
+
+### Reference images and output
+
 Reference images — repeat `--image` for more than one:
 
 ```bash
@@ -67,6 +101,7 @@ cxi --prompt "flat blue square icon" --dry-run
 | `--transparent` | ask for a transparent background |
 | `--format <name>` | `png` (default), `jpeg`, `webp` |
 | `--model <name>` | orchestrator model — default `gpt-5.6-sol`; also `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`. All five verified live; unknown names are rejected with HTTP 400 |
+| `--image-model <name>` | requested image model, e.g. `gpt-image-2.5-flare` or `gpt-image-2.5-sunburst`; defaults to the server's choice |
 | `--provider <name>` | `codex-http` (default), `codex-cli`, `auto` |
 | `--retries <n>` | retry transient failures (default 2, max 10) |
 | `--no-retry` | do not retry |
@@ -76,9 +111,28 @@ cxi --prompt "flat blue square icon" --dry-run
 
 Environment overrides: `CODEX_HOME`, `CODEX_IMAGEN_BASE_URL`, `CODEX_IMAGEN_AUTH_FILE`,
 `CODEX_IMAGEN_INSTALLATION_ID_FILE`, `CODEX_IMAGEN_GENERATED_IMAGES_DIR`,
-`CODEX_IMAGEN_PROVIDER`, `CODEX_IMAGEN_MODEL`, `CODEX_IMAGEN_ORIGINATOR`, `CODEX_IMAGEN_OUTPUT`.
+`CODEX_IMAGEN_PROVIDER`, `CODEX_IMAGEN_MODEL`, `CODEX_IMAGEN_IMAGE_MODEL`,
+`CODEX_IMAGEN_ORIGINATOR`, `CODEX_IMAGEN_OUTPUT`.
 
-## How this backend actually behaves
+## Transparent reference images: 2026-09-15 check
+
+A transparent reference alone did **not** preserve transparency in the tested
+color edit: it returned RGB with an opaque background. With `--transparent`
+and an explicit request to preserve the transparent background, the edit
+returned RGBA with 81.20% fully transparent pixels. Creating a new icon in the
+reference's style with an explicit transparency request also worked (81.43%).
+
+Each condition was tested once, and all runs reported `gpt-image-2-codex`.
+An alpha channel alone is not proof of transparency; these results were checked
+for actual alpha values below 255. Exact prompts and measurements are in the
+[verification record](docs/verification-2026-09-15.md).
+
+## Backend measurements from 2026-08-25
+
+These observations describe the default `gpt-image-2-codex` route at that time.
+They do not establish Images 2.5 capabilities. `cxi` still steers size and
+transparency through the prompt and enforces its 3:1 aspect limit; this change
+adds image model selection, not resolution or quality controls.
 
 Measured 2026-08-25 against codex-cli 0.149.1 with the bundled imagegen skill
 stamped 2026-08-25 08:53 KST. **Pin both numbers.** The system skill at
@@ -102,7 +156,8 @@ Of the options the public Images API exposes, this path honors almost none:
 
 The orchestrator model reads the prompt, picks size/quality/background itself,
 and echoes its choices on the `image_generation_call` item. So `--size` and
-`--transparent` are folded into the **prompt**; only `--format` rides on the tool.
+`--transparent` are folded into the **prompt**. The CLI now sends `--image-model`
+on the tool alongside `--format`; check the reported model as described above.
 
 ### Resolution is fixed; only the shape changes
 
@@ -273,11 +328,11 @@ just spends your quota to reach the same message.
 
 ## Providers
 
-| Provider | Reference images | Aspect | Transparency | jpeg/webp |
-|---|---|---|---|---|
-| `codex-http` (default) | ✅ | ✅ | ✅ | ✅ |
-| `codex-cli` (`codex exec`, recovers the PNG from `~/.codex/generated_images/`) | ❌ | ❌ | ❌ | ❌ |
-| `auto` | falls back only when nothing would be silently dropped | | |
+| Provider | Reference images | Aspect | Transparency | jpeg/webp | Image model request |
+|---|---|---|---|---|---|
+| `codex-http` (default) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `codex-cli` (`codex exec`, recovers the PNG from `~/.codex/generated_images/`) | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `auto` | falls back only when nothing would be silently dropped | | | | |
 
 `auto` will not fall back after a declined prompt — the fallback would be
 declined too, so the original guidance is surfaced instead.
@@ -291,7 +346,8 @@ const config = resolveConfig({});
 const result = await createProvider(config).generateImage({
   prompt: 'flat blue square icon',
   model: config.defaultModel,
-  outputPath: './out.png',
+  imageModel: 'gpt-image-2.5-flare',
+  outputPath: './out.webp',
   size: '16:9',
   transparent: true,
   outputFormat: 'webp'
@@ -299,6 +355,11 @@ const result = await createProvider(config).generateImage({
 
 console.log(result.savedPath, result.image, result.backendSettings);
 ```
+
+Use `resolveConfig({ defaultImageModel: 'gpt-image-2.5-flare' })` to set a
+library default. A per-call `imageModel` overrides it. Inspect
+`result.requestedImageModel`, `result.backendSettings.model`, and
+`result.warnings` to check what the server reported.
 
 ## Agent skill
 
