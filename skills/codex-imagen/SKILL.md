@@ -169,7 +169,11 @@ cxi --prompt "flat blue square icon" --dry-run
 
 ## Prerequisites the agent must check
 
-- `cxi` is on `PATH`.
+- `cxi` is on `PATH`. If it is not, run every command in this skill with
+  `npx -y github:Lucas20000903/codex-imagen` in place of `cxi` (Node 20+; the
+  arguments are the same), and tell the user they can install it permanently
+  with `npm install -g github:Lucas20000903/codex-imagen`. Do not install it
+  globally without asking.
 - The user is signed in to Codex with ChatGPT (`~/.codex/auth.json` with
   `auth_mode = chatgpt`). If it is missing, **stop and tell the user to run
   `codex login`** — do not install Codex and do not fabricate auth state.

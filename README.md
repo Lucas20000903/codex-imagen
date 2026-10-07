@@ -26,9 +26,17 @@ ChatGPT session already signed in on your machine. No separate API key.
 ## Install
 
 ```bash
-npm install -g .        # from a clone
+npm install -g github:Lucas20000903/codex-imagen
 cxi --version
 ```
+
+From a clone, `npm install -g .` (or `npm link` while developing). To try it
+without installing, put `npx -y github:Lucas20000903/codex-imagen` where the
+examples say `cxi`.
+
+A global install lives under the active Node version's prefix, so switching
+versions with fnm or nvm hides `cxi` until it is installed again for that
+version.
 
 ## Usage
 
@@ -364,11 +372,15 @@ library default. A per-call `imageModel` overrides it. Inspect
 ## Agent skill
 
 `skills/codex-imagen/SKILL.md` follows the [Agent Skills](https://agentskills.io/specification)
-format. Install it for Claude Code with:
+format. Install it for Claude Code, Codex, Cursor, and other agents with the
+[skills CLI](https://github.com/vercel-labs/skills):
 
 ```bash
-mkdir -p ~/.claude/skills && cp -R skills/codex-imagen ~/.claude/skills/
+npx skills add Lucas20000903/codex-imagen
 ```
+
+This installs only the skill, not the CLI. Install `cxi` as described in
+[Install](#install); without it, the skill falls back to running through `npx`.
 
 ## Development
 
